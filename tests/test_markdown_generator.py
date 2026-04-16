@@ -129,7 +129,7 @@ class TestMetadataFormatting:
 
         # Check for YAML frontmatter metadata
         assert 'ID: I1' in content
-        assert 'FamilySearch_ID: G123-ABC' in content
+        assert 'FamilySearch ID: G123-ABC' in content
         assert 'Name: John Doe' in content
         assert 'Sex: M' in content
 

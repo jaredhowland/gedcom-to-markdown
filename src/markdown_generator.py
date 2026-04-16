@@ -127,7 +127,7 @@ class MarkdownGenerator:
 
         f.write(f"ID: {individual.get_id()}\n")
         if fs_id:
-            f.write(f"FamilySearch_ID: {fs_id}\n")
+            f.write(f"FamilySearch ID: {fs_id}\n")
         f.write(f"Name: {individual.get_full_name()}\n")
 
         # Lived years
