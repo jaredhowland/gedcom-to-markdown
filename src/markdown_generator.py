@@ -62,10 +62,12 @@ class MarkdownGenerator:
     ) -> List[str]:
         """Return non-empty coordinate values from a mapping in latitude/longitude order."""
         coords = []
-        if data.get(lat_key):
-            coords.append(data.get(lat_key))
-        if data.get(long_key):
-            coords.append(data.get(long_key))
+        lat_val = data.get(lat_key)
+        long_val = data.get(long_key)
+        if lat_val:
+            coords.append(lat_val)
+        if long_val:
+            coords.append(long_val)
         return coords
 
     def _get_unique_filename(self, base_name: str, individual_id: str) -> str:
@@ -150,20 +152,20 @@ class MarkdownGenerator:
             f.write(f"Born: {birth['date']}\n")
         if birth["place"]:
             f.write(f"Place of birth: {birth['place']}\n")
-            # Birth coordinates if available
-            birth_coords = self._coordinate_values(birth)
-            if birth_coords:
-                f.write(f"Birth coordinates: {', '.join(birth_coords)}\n")
+        # Birth coordinates should be emitted even if place is empty
+        birth_coords = self._coordinate_values(birth)
+        if birth_coords:
+            f.write(f"Birth coordinates: {', '.join(birth_coords)}\n")
 
         # Death details
         if death["date"]:
             f.write(f"Passed away: {death['date']}\n")
         if death["place"]:
             f.write(f"Place of death: {death['place']}\n")
-            # Death coordinates if available
-            death_coords = self._coordinate_values(death)
-            if death_coords:
-                f.write(f"Death coordinates: {', '.join(death_coords)}\n")
+        # Death coordinates should be emitted even if place is empty
+        death_coords = self._coordinate_values(death)
+        if death_coords:
+            f.write(f"Death coordinates: {', '.join(death_coords)}\n")
 
         # Physical attributes
         attrs = individual.get_attributes()
@@ -217,12 +219,13 @@ class MarkdownGenerator:
 
             if event["date"]:
                 f.write(f"- **Date**: {event['date']}\n")
+
+            # Always compute coordinates, emit regardless of whether place is present
+            coords = self._coordinate_values(event)
             if event["place"]:
                 f.write(f"- **Place**: {event['place']}\n")
-                # If coordinates were extracted, write them below the place line
-                coords = self._coordinate_values(event)
-                if coords:
-                    f.write(f"- **Coordinates**: {', '.join(coords)}\n")
+            if coords:
+                f.write(f"- **Coordinates**: {', '.join(coords)}\n")
             if event["details"]:
                 f.write(f"- **Details**: {event['details']}\n")
 
@@ -261,12 +264,10 @@ class MarkdownGenerator:
                 f.write(f"* Marriage date: {family['marriage_date']}\n")
             if family["marriage_place"]:
                 f.write(f"* Marriage place: {family['marriage_place']}\n")
-                # Marriage coordinates if available on family record
-                mcoords = self._coordinate_values(
-                    family, "marriage_lat", "marriage_long"
-                )
-                if mcoords:
-                    f.write(f"* Marriage coordinates: {', '.join(mcoords)}\n")
+            # Marriage coordinates should be emitted regardless of whether place is present
+            mcoords = self._coordinate_values(family, "marriage_lat", "marriage_long")
+            if mcoords:
+                f.write(f"* Marriage coordinates: {', '.join(mcoords)}\n")
 
             # Write children if they exist
             if family["children"]:

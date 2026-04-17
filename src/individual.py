@@ -111,7 +111,7 @@ class Individual:
                 - 'lat' (str): Latitude string if present, else ''
                 - 'long' (str): Longitude string if present, else ''
         """
-        birth_date, birth_place, lat, long = self._get_event_info("BIRT")
+        birth_date, birth_place, lat, lon = self._get_event_info("BIRT")
 
         # Fallback to helper methods for year if available
         year = self.element.get_birth_year()
@@ -122,7 +122,7 @@ class Individual:
             "place": birth_place or "",
             "year": birth_year,
             "lat": lat,
-            "long": long,
+            "long": lon,
         }
 
     def get_death_info(self) -> Dict[str, str]:
@@ -137,7 +137,7 @@ class Individual:
                 - lat (str): Latitude if present, else ''
                 - long (str): Longitude if present, else ''
         """
-        death_date, death_place, lat, long = self._get_event_info("DEAT")
+        death_date, death_place, lat, lon = self._get_event_info("DEAT")
         year = self._extract_year(death_date)
 
         return {
@@ -145,7 +145,7 @@ class Individual:
             "place": death_place or "",
             "year": year,
             "lat": lat,
-            "long": long,
+            "long": lon,
         }
 
     def get_gender(self) -> str:
@@ -408,12 +408,18 @@ class Individual:
 
             if tag == "LATI" and not lati:
                 lati = child.get_value() or ""
+                if lati and longi:
+                    return lati, longi
+                # Don't recurse into LATI leaf nodes
+                continue
             elif tag == "LONG" and not longi:
                 longi = child.get_value() or ""
+                if lati and longi:
+                    return lati, longi
+                # Don't recurse into LONG leaf nodes
+                continue
 
-            if lati and longi:
-                return lati, longi
-
+            # Recurse into other child nodes to find nested LATI/LONG
             nested_lati, nested_longi = self._extract_lat_long_from_node(child)
             if nested_lati and not lati:
                 lati = nested_lati
