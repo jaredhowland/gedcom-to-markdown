@@ -57,6 +57,18 @@ class Individual:
         """
         return self.element.get_pointer()
 
+    def get_fs_id(self) -> str:
+        """
+        Return the FamilySearch Tree ID (`_FSFTID`) if present.
+
+        Returns:
+            str: FamilySearch Tree ID value, or an empty string when not available.
+        """
+        for child in self.element.get_child_elements():
+            if child.get_tag() == "_FSFTID":
+                return child.get_value() or ""
+        return ""
+
     def get_names(self) -> Tuple[str, str]:
         """
         Return the individual's first and last name with surrounding whitespace removed.

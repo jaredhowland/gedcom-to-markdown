@@ -41,6 +41,7 @@ def sample_gedcom_content():
 1 NAME John /Doe/
 2 GIVN John
 2 SURN Doe
+1 _FSFTID G123-ABC
 1 SEX M
 1 BIRT
 2 DATE 1 JAN 1950

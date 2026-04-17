@@ -81,6 +81,15 @@ class TestIndividualBasicInfo:
         """Test gender extraction."""
         assert john_doe.get_gender() == 'M'
 
+    def test_get_fs_id(self, john_doe, sample_gedcom_file):
+        """Test FamilySearch Tree ID extraction from _FSFTID tag."""
+        assert john_doe.get_fs_id() == 'G123-ABC'
+        parser = GedcomParser(sample_gedcom_file)
+        individuals = parser.get_individuals()
+        jane = [ind for ind in individuals if 'Jane' in str(ind.get_name())]
+        jane_doe = Individual(jane[0], parser.parser)
+        assert jane_doe.get_fs_id() == ''
+
     def test_get_gender_default_unknown(self, sample_gedcom_file):
         """Test that missing gender defaults to 'U'."""
         gedcom_content = """0 HEAD

@@ -136,8 +136,11 @@ class MarkdownGenerator:
 
         birth = individual.get_birth_info()
         death = individual.get_death_info()
+        fs_id = individual.get_fs_id()
 
         f.write(f"ID: {individual.get_id()}\n")
+        if fs_id:
+            f.write(f"FamilySearch ID: {fs_id}\n")
         f.write(f"Name: {individual.get_full_name()}\n")
 
         # Lived years
