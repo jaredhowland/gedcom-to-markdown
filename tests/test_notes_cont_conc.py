@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from src.gedcom_parser import GedcomParser
-from src.individual import Individual
-from src.markdown_generator import MarkdownGenerator
+from gedcom_parser import GedcomParser
+from individual import Individual
+from markdown_generator import MarkdownGenerator
 
 
 def _make_output_dir(tmp_path):
@@ -12,19 +12,18 @@ def _make_output_dir(tmp_path):
 
 
 class TestNotesContConc:
-    def test_note_cont_and_conc_inline(self, tmp_path):
+    def test_note_cont_and_conc_inline_in_indi(self, tmp_path):
         gedcom = """0 HEAD
 1 SOUR TestApp
 1 GEDC
 2 VERS 5.5.1
 1 CHAR UTF-8
-0 @N1@ NOTE
-1 CONT First line
-1 CONC -continued
-1 CONT Next paragraph
 0 @I1@ INDI
 1 NAME John /Doe/
-1 NOTE @N1@
+1 NOTE
+2 CONT First line
+2 CONC -continued
+2 CONT Next paragraph
 0 TRLR
 """
         f = tmp_path / "note.ged"

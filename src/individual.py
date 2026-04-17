@@ -16,6 +16,97 @@ import gedcom.tags
 logger = logging.getLogger(__name__)
 
 
+def collapse_single_line(text: str) -> str:
+    """Normalize whitespace on a single logical line.
+
+    This helper collapses runs of whitespace (spaces, tabs) into single spaces
+    and trims leading/trailing whitespace. It is intended for short metadata
+    fields such as titles, publication strings, or other single-line values
+    where internal spacing should be normalized but line breaks must be
+    preserved elsewhere.
+
+    Examples:
+        >>> collapse_single_line("  Overland    Travels  Pioneer   Detail  ")
+        'Overland Travels Pioneer Detail'
+
+    Returns an empty string when passed a false-y value.
+    """
+    return " ".join(text.split()).strip() if text else ""
+
+
+def resolve_gedcom_text(parser, value: str, element=None) -> str:
+    """Resolve a GEDCOM text value including CONT/CONC continuations.
+
+    GEDCOM continuation rules:
+    - CONC: concatenate to previous line (no newline inserted)
+    - CONT: start a new line (insert a newline in the output)
+
+    This helper handles both pointer-style NOTE references (e.g. "@N1@") and
+    inline NOTE bodies (where the parent element contains CONT/CONC children).
+
+    Parameters
+    ----------
+    parser:
+        The GEDCOM parser instance used to resolve pointer targets via
+        parser.get_element_dictionary().
+    value (str):
+        The immediate value of the tag. May be a pointer ("@N1@") or plain
+        text. When it's a pointer, the referenced element is resolved and its
+        child CONT/CONC lines are applied.
+    element:
+        Optional element whose child CONT/CONC children should be read when
+        resolving inline NOTE content. Provide this when `value` is an inline
+        value and the continuations are stored on the element itself.
+
+    Returns
+    -------
+    str
+        Resolved text with CONC concatenated directly and CONT lines separated
+        by a single newline. Empty CONT/CONC values are skipped.
+
+    Examples
+    --------
+    Given a referenced NOTE element with:
+        0 @N1@ NOTE
+        1 CONT First line
+        1 CONC -continued
+        1 CONT Second para
+    Calling resolve_gedcom_text(parser, "@N1@") returns:
+        "First line-continued\nSecond para"
+    """
+    # Pointer/reference to another element (e.g., NOTE record)
+    if value and value.startswith("@") and value.endswith("@"):
+        target = parser.get_element_dictionary().get(value)
+        if not target:
+            return ""
+        text = target.get_value() or ""
+        # Respect CONT vs CONC semantics: CONT => newline, CONC => concatenate
+        for sub in target.get_child_elements():
+            tag = sub.get_tag()
+            val = (sub.get_value() or "")
+            if not val:
+                continue
+            if tag == "CONC":
+                text += val
+            elif tag == "CONT":
+                text += "\n" + val
+        return text
+
+    # Inline text with possible CONT/CONC children
+    text = value or ""
+    if element is not None:
+        for sub in element.get_child_elements():
+            tag = sub.get_tag()
+            val = (sub.get_value() or "")
+            if not val:
+                continue
+            if tag == "CONC":
+                text += val
+            elif tag == "CONT":
+                text += "\n" + val
+    return text
+
+
 class Individual:
     """
     Represents an individual person in the family tree.
@@ -373,45 +464,25 @@ class Individual:
         return "\n".join(" ".join(line.split()) for line in text.splitlines()).strip()
 
     def _resolve_gedcom_text(self, value: str, element=None) -> str:
-        """Resolve a GEDCOM text value which may be a pointer to another element or inline text.
+        """Instance-level wrapper for the module resolve_gedcom_text helper.
 
-        Appends CONT/CONC child lines (skipping empty ones) separated by single newlines.
+        This method forwards to the module-level resolve_gedcom_text function
+        passing the parser instance bound to this Individual. It exists to keep
+        call sites on the Individual instance simple while centralizing the
+        continuation resolution logic in one place.
+
+        Parameters
+        ----------
+        value (str): The immediate tag value (may be a pointer like "@N1@"
+                     or inline text).
+        element: Optional element to read CONT/CONC children from when resolving
+                 inline note content.
+
+        Returns
+        -------
+        str: Resolved note/text with CONT/CONC applied.
         """
-        if not value:
-            return ""
-
-        # Pointer/reference to another element (e.g., NOTE record)
-        if value.startswith("@") and value.endswith("@"):
-            target = self.gedcom.get_element_dictionary().get(value)
-            if not target:
-                return ""
-            text = target.get_value() or ""
-            # Respect CONT vs CONC semantics: CONT => newline, CONC => concatenate
-            for sub in target.get_child_elements():
-                tag = sub.get_tag()
-                val = (sub.get_value() or "")
-                if not val:
-                    continue
-                if tag == "CONC":
-                    # concatenate directly
-                    text += val
-                elif tag == "CONT":
-                    text += "\n" + val
-            return text
-
-        # Inline text with possible CONT/CONC children
-        text = value or ""
-        if element is not None:
-            for sub in element.get_child_elements():
-                tag = sub.get_tag()
-                val = (sub.get_value() or "")
-                if not val:
-                    continue
-                if tag == "CONC":
-                    text += val
-                elif tag == "CONT":
-                    text += "\n" + val
-        return text
+        return resolve_gedcom_text(self.gedcom, value, element)
 
     def get_notes(self) -> List[str]:
         """Return the person's notes with continuations resolved and extraneous whitespace collapsed per-line."""
@@ -426,15 +497,25 @@ class Individual:
         return notes
 
     def get_sources(self) -> List[Dict[str, str]]:
-        """
-        Extract SOUR references for this individual and return normalized entries.
-        Each entry is a dict: {"title": str, "publ": str, "note": str} with internal whitespace collapsed.
+        """Extract source references associated with this individual.
 
-        Handles both referenced SOURCE pointers (SOUR @X@) and inline SOURCE blocks under the individual.
-        """
-        def _collapse_single_line(text: str) -> str:
-            return " ".join(text.split()).strip() if text else ""
+        Each source entry returned is a dictionary with keys:
+            - "title": The source title (single-line whitespace collapsed)
+            - "publ": The publication or URL (single-line whitespace collapsed)
+            - "note": The NOTE text for the source with original line breaks preserved
+                      (CONT produces a newline, CONC concatenates). Empty continuation
+                      lines are skipped.
 
+        The method handles two forms of source associations:
+        1. Pointer-style references (1 SOUR @S1@) where @S1@ points to a separate
+           SOURCE record elsewhere in the GEDCOM file. In this case the referenced
+           SOURCE element's TITL/PUBL/NOTE children are resolved.
+        2. Inline SOURCE blocks nested under the individual (1 SOUR ... with
+           sub-tags at level 2). These are read directly from the child's children.
+
+        Notes are resolved via the shared resolve_gedcom_text helper so pointer
+        references and inline NOTE children are handled consistently.
+        """
         sources = []
         for child in self.element.get_child_elements():
             if child.get_tag() != "SOUR":
@@ -446,7 +527,8 @@ class Individual:
 
             # child may be a pointer to a SOURCE record or an inline SOURCE element
             src_ref = child.get_value() or ""
-            if src_ref and src_ref.startswith("@"):
+            # Treat as a pointer only if it both starts and ends with '@' (e.g., @S1@)
+            if src_ref and src_ref.startswith("@") and src_ref.endswith("@"):
                 elem_to_scan = self.gedcom.get_element_dictionary().get(src_ref) or child
             else:
                 elem_to_scan = child
@@ -462,8 +544,8 @@ class Individual:
                     note_text = self._resolve_gedcom_text(raw_note, sc)
 
             # Normalize whitespace for title/publ but preserve line breaks in notes
-            title = _collapse_single_line(title)
-            publ = _collapse_single_line(publ)
+            title = collapse_single_line(title)
+            publ = collapse_single_line(publ)
 
             note_text = self._collapse_preserve_lines(note_text)
 
