@@ -653,7 +653,7 @@ class MarkdownGenerator:
 
         return re.sub(r'<[^>]*>', repl, text, flags=re.DOTALL)
 
-    def _write_multiline_note_block(self, f, lines: list[str], nested: bool = True) -> None:
+    def _write_multiline_note_block(self, f, lines: List[str], nested: bool = True) -> None:
         """Write a multi-line note block.
 
         - If nested is True, writes a nested list bullet (3 spaces + '-') for the first
@@ -771,15 +771,16 @@ class MarkdownGenerator:
         logger.info(f"Successfully generated {len(paths)} notes")
 
         # Generate global sources index once (expensive) using the first available parser
-        parser = None
-        for ind in individuals:
-            parser = getattr(ind, 'gedcom', None)
-            if parser:
-                break
+        if not self._sources_index_generated:
+            parser = None
+            for ind in individuals:
+                parser = getattr(ind, 'gedcom', None)
+                if parser:
+                    break
 
-        if parser:
-            try:
-                self._generate_sources_index(parser)
-            except Exception:
-                logger.exception('Failed to generate sources index')
+            if parser:
+                try:
+                    self._generate_sources_index(parser)
+                except Exception:
+                    logger.exception('Failed to generate sources index')
         return paths

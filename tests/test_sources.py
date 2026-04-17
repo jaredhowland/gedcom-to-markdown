@@ -1,5 +1,4 @@
 import pytest
-from pathlib import Path
 
 from gedcom_parser import GedcomParser
 from individual import Individual
