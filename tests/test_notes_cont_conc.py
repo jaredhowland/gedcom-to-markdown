@@ -107,4 +107,4 @@ class TestNotesContConc:
         assert index.exists()
         content = index.read_text()
         # Ensure concatenation in source note
-        assert 'Source linemore' in content
+        assert 'Source line-more' in content
