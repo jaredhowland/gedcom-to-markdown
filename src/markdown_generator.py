@@ -57,6 +57,17 @@ class MarkdownGenerator:
         self.generated_stories = {}  # Track generated story files
         self.filename_map = {}  # Map from individual ID to actual filename used
 
+    def _coordinate_values(
+        self, data: dict, lat_key: str = "lat", long_key: str = "long"
+    ) -> List[str]:
+        """Return non-empty coordinate values from a mapping in latitude/longitude order."""
+        coords = []
+        if data.get(lat_key):
+            coords.append(data.get(lat_key))
+        if data.get(long_key):
+            coords.append(data.get(long_key))
+        return coords
+
     def _get_unique_filename(self, base_name: str, individual_id: str) -> str:
         """
         Get a unique filename for an individual, handling duplicates by adding (1), (2), etc.
@@ -139,12 +150,20 @@ class MarkdownGenerator:
             f.write(f"Born: {birth['date']}\n")
         if birth["place"]:
             f.write(f"Place of birth: {birth['place']}\n")
+            # Birth coordinates if available
+            birth_coords = self._coordinate_values(birth)
+            if birth_coords:
+                f.write(f"Birth coordinates: {', '.join(birth_coords)}\n")
 
         # Death details
         if death["date"]:
             f.write(f"Passed away: {death['date']}\n")
         if death["place"]:
             f.write(f"Place of death: {death['place']}\n")
+            # Death coordinates if available
+            death_coords = self._coordinate_values(death)
+            if death_coords:
+                f.write(f"Death coordinates: {', '.join(death_coords)}\n")
 
         # Physical attributes
         attrs = individual.get_attributes()
@@ -167,9 +186,9 @@ class MarkdownGenerator:
     def _write_events(self, f, individual: Individual):
         """
         Write the "Life Events" section for an individual into the open file.
-        
+
         Writes a "Life Events" header and a subsection for each event other than birth or death. For each event, emits Date, Place, and Details lines when those values are present. Maps common GEDCOM-like event codes to readable names (e.g., 'MARR' -> Marriage, 'OCCU' -> Occupation, 'EDUC' -> Education, 'RESI' -> Residence, 'BURI' -> Burial). If the individual has no other events, nothing is written.
-        
+
         Parameters:
             f: A writable text file object positioned where the section should be written.
             individual (Individual): An object providing event data via get_events(), where each event is a dict containing at least 'type', 'date', 'place', and 'details'.
@@ -200,6 +219,10 @@ class MarkdownGenerator:
                 f.write(f"- **Date**: {event['date']}\n")
             if event["place"]:
                 f.write(f"- **Place**: {event['place']}\n")
+                # If coordinates were extracted, write them below the place line
+                coords = self._coordinate_values(event)
+                if coords:
+                    f.write(f"- **Coordinates**: {', '.join(coords)}\n")
             if event["details"]:
                 f.write(f"- **Details**: {event['details']}\n")
 
@@ -238,6 +261,12 @@ class MarkdownGenerator:
                 f.write(f"* Marriage date: {family['marriage_date']}\n")
             if family["marriage_place"]:
                 f.write(f"* Marriage place: {family['marriage_place']}\n")
+                # Marriage coordinates if available on family record
+                mcoords = self._coordinate_values(
+                    family, "marriage_lat", "marriage_long"
+                )
+                if mcoords:
+                    f.write(f"* Marriage coordinates: {', '.join(mcoords)}\n")
 
             # Write children if they exist
             if family["children"]:
@@ -296,9 +325,9 @@ class MarkdownGenerator:
     def _write_images(self, f, individual: Individual):
         """
         Write an "Images" section to the open file for all images returned by the individual.
-        
+
         If the individual has no images, nothing is written. Each image is written as a Markdown image reference (![title](path)). If an image has no title, the literal "Image" is used. When the generator was configured with a media subdirectory, that subdirectory is prefixed to the image filename.
-        
+
         Parameters:
             f: A writable file-like object positioned where the section should be emitted.
             individual (Individual): The individual whose images are written. Expects items from individual.get_images() to be dicts with keys 'file' (filename) and optional 'title'.
@@ -325,7 +354,7 @@ class MarkdownGenerator:
     def _generate_story_file(self, story: dict, individual_name: str) -> str:
         """
         Generate a separate markdown file for a story and return the story note name.
-        
+
         Parameters:
             story (dict): Story data containing keys:
                 - title (str | None): Story title; "Untitled Story" used if empty.
@@ -334,7 +363,7 @@ class MarkdownGenerator:
                     'subtitle' (str | None), 'text' (str | None), and 'images' (List[dict]).
                     Images should be dicts with 'file' (str) and optional 'title' (str).
             individual_name (str): Full name of the individual the story relates to; used for a back-link.
-        
+
         Returns:
             str: The generated story note name (filename without the ".md" extension). If a story file with the same filename was already created, returns the existing note name.
         """
@@ -399,7 +428,7 @@ class MarkdownGenerator:
         Write the "Notes" section for an individual, including inline notes and links to separate story files.
         
         If the individual has no notes and no stories, nothing is written. For each regular note, writes the note text into the section. For each story, generates or reuses a story markdown file via the generator, then writes a WikiLink to that story (prefixed with the configured stories subdirectory when present) and includes the story's description on the same line if provided.
-        
+
         Parameters:
             f: A writable text file object opened for the individual's markdown note.
             individual (Individual): The individual whose notes and stories will be rendered.
@@ -449,12 +478,12 @@ class MarkdownGenerator:
     def _write_metadata(self, f, key: str, value: str):
         """
         Write a visible Obsidian metadata line for the given key and value.
-        
+
         Parameters:
             f: A text file-like object to write the metadata line to.
             key (str): Metadata key to appear before the separator.
             value (str): Metadata value to appear after the separator.
-        
+
         Description:
             Emits metadata in the Obsidian visible format: [Key:: Value]
         """
@@ -463,9 +492,9 @@ class MarkdownGenerator:
     def _write_metadata_hidden(self, f, key: str, value: str):
         """
         Write a hidden Obsidian metadata line to the provided file.
-        
+
         Writes a single line in the form "(Key:: Value)" followed by a newline to the file-like object `f`.
-        
+
         Parameters:
             f: A writable file-like object to which the metadata line will be written.
             key (str): Metadata key.
