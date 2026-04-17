@@ -253,8 +253,8 @@ class Individual:
 
         Returns:
             List of dictionaries with family information including:
-            - father: str (father's GEDCOM ID) or None
-            - mother: str (mother's GEDCOM ID) or None
+            - father: str (father's GEDCOM pointer, including surrounding '@' characters, e.g. '@I1@') or None
+            - mother: str (mother's GEDCOM pointer, including surrounding '@' characters, e.g. '@I2@') or None
         """
         families = []
         self_pointer = self.element.get_pointer()
