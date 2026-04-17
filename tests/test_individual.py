@@ -25,26 +25,6 @@ class TestIndividualBasicInfo:
         """Get the John Doe individual from sample GEDCOM."""
         parser = GedcomParser(sample_gedcom_file)
         individuals = parser.get_individuals()
-        """
-Tests for the Individual data model.
-
-This module tests individual person data extraction including:
-- Names and IDs
-- Birth and death information
-- Events and attributes
-- Family relationships
-- Images and notes
-- Custom story tags
-"""
-
-class TestIndividualBasicInfo:
-    """Tests for basic individual information extraction."""
-
-    @pytest.fixture
-    def john_doe(self, sample_gedcom_file):
-        """Get the John Doe individual from sample GEDCOM."""
-        parser = GedcomParser(sample_gedcom_file)
-        individuals = parser.get_individuals()
         john = [ind for ind in individuals if 'John' in str(ind.get_name())]
         return Individual(john[0], parser.parser)
 
@@ -350,10 +330,6 @@ class TestEvents:
         events = person.get_events()
         event_types = [e['type'] for e in events]
 
-        assert resi['place'] == 'Deepplace'
-        assert resi['lat'] == '48.8566'
-        assert resi['long'] == '2.3522'
-
 
 class TestFamilyRelationships:
     """Tests for family relationship extraction."""
@@ -600,8 +576,6 @@ class TestAttributes:
 
         attrs = person.get_attributes()
         assert len(attrs) == 0
-
-        return Individual(john[0], parser.parser)
 
     def test_get_id(self, john_doe):
         """Test ID extraction without @ symbols."""

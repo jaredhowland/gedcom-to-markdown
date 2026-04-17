@@ -211,9 +211,10 @@ class Individual:
             - children: List of Individual objects
         """
         families = []
+        # Cache the subject pointer once; it doesn't change across families.
+        self_pointer = self.element.get_pointer()
         for family in self.gedcom.get_families(self.element):
             # Get partner
-            self_pointer = self.element.get_pointer()
             partners = [
                 Individual(parent, self.gedcom)
                 for parent in self.gedcom.get_family_members(family, "PARENTS")
