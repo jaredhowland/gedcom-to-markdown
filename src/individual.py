@@ -368,41 +368,95 @@ class Individual:
 
     def get_notes(self) -> List[str]:
         """
-        Return the person's notes with inline continuations and referenced NOTE records resolved.
-        
-        This resolves NOTE cross-references (values like `@X@`), appends `CONT`/`CONC` continuations, trims whitespace, and omits empty or unresolved references.
-        
-        Returns:
-            List[str]: Note texts with continuations and referenced NOTE content merged; empty or unresolved notes are omitted.
+        Return the person's notes with continuations resolved and extraneous whitespace collapsed per-line.
         """
+        def _collapse_preserve_lines(text: str) -> str:
+            if not text:
+                return ""
+            return "\n".join(" ".join(line.split()) for line in text.splitlines()).strip()
+
+        def _resolve_note_text(value: str, element=None) -> str:
+            if not value:
+                return ""
+            # Reference to a NOTE record
+            if value.startswith("@") and value.endswith("@"):
+                note_elem = self.gedcom.get_element_dictionary().get(value)
+                if not note_elem:
+                    return ""
+                text = note_elem.get_value() or ""
+                for sub in note_elem.get_child_elements():
+                    if sub.get_tag() in ("CONT", "CONC"):
+                        text += "\n" + (sub.get_value() or "")
+                return text
+            # Inline note: include any CONT/CONC children of the element
+            text = value
+            if element is not None:
+                for sub in element.get_child_elements():
+                    if sub.get_tag() in ("CONT", "CONC"):
+                        text += "\n" + (sub.get_value() or "")
+            return text
+
         notes = []
-
         for child in self.element.get_child_elements():
-            if child.get_tag() == "NOTE":
-                note_text = child.get_value() or ""
-
-                # If note_text starts with @, it's a reference to a NOTE record
-                if note_text.startswith("@") and note_text.endswith("@"):
-                    # Resolve the reference
-                    note_element = self.gedcom.get_element_dictionary().get(note_text)
-                    if note_element:
-                        # Get the note text from the NOTE element
-                        note_text = note_element.get_value() or ""
-
-                        # Get continued text from the NOTE record
-                        for subchild in note_element.get_child_elements():
-                            if subchild.get_tag() in ["CONT", "CONC"]:
-                                note_text += "\n" + (subchild.get_value() or "")
-                else:
-                    # Inline note - check for continued text in subchilds
-                    for subchild in child.get_child_elements():
-                        if subchild.get_tag() in ["CONT", "CONC"]:
-                            note_text += "\n" + (subchild.get_value() or "")
-
-                if note_text and not note_text.startswith("@"):
-                    notes.append(note_text.strip())
-
+            if child.get_tag() != "NOTE":
+                continue
+            raw = child.get_value() or ""
+            text = _resolve_note_text(raw, child)
+            if text and not text.startswith("@"):
+                notes.append(_collapse_preserve_lines(text))
         return notes
+
+    def get_sources(self) -> List[Dict[str, str]]:
+        """
+        Extract SOUR references for this individual and return normalized entries.
+        Each entry is a dict: {"title": str, "publ": str, "note": str} with internal whitespace collapsed.
+        """
+        def _collapse_single_line(text: str) -> str:
+            return " ".join(text.split()).strip() if text else ""
+
+        sources = []
+        for child in self.element.get_child_elements():
+            if child.get_tag() != "SOUR":
+                continue
+            src_ref = child.get_value() or ""
+            title = ""
+            publ = ""
+            note_text = ""
+
+            # Resolve referenced SOURCE record
+            if src_ref.startswith("@"):
+                src_elem = self.gedcom.get_element_dictionary().get(src_ref)
+                if src_elem:
+                    for sc in src_elem.get_child_elements():
+                        tag = sc.get_tag()
+                        if tag == "TITL":
+                            title = sc.get_value() or ""
+                        elif tag == "PUBL":
+                            publ = sc.get_value() or ""
+                        elif tag == "NOTE":
+                            raw_note = sc.get_value() or ""
+                            # reuse note resolver behavior
+                            if raw_note.startswith("@") and raw_note.endswith("@"):
+                                n = self.gedcom.get_element_dictionary().get(raw_note)
+                                if n:
+                                    note_text = n.get_value() or ""
+                                    for sub in n.get_child_elements():
+                                        if sub.get_tag() in ("CONT", "CONC"):
+                                            note_text += "\n" + (sub.get_value() or "")
+                            else:
+                                note_text = raw_note
+                                for sub in sc.get_child_elements():
+                                    if sub.get_tag() in ("CONT", "CONC"):
+                                        note_text += "\n" + (sub.get_value() or "")
+
+            # Normalize whitespace
+            title = _collapse_single_line(title)
+            publ = _collapse_single_line(publ)
+            note_text = _collapse_single_line(note_text)
+
+            if title or publ or note_text:
+                sources.append({"title": title, "publ": publ, "note": note_text})
+        return sources
 
     def get_stories(self) -> List[Dict]:
         """

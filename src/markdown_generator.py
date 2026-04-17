@@ -108,6 +108,16 @@ class MarkdownGenerator:
             self._write_children(f, individual)
             self._write_images(f, individual)
             self._write_notes(f, individual)
+            # Write Sources section (if any)
+            self._write_sources(f, individual)
+
+        # Also generate an index of all SOURCE records (including non-referenced) if parser available
+        try:
+            parser = getattr(individual, 'gedcom', None)
+            if parser:
+                self._generate_sources_index(parser)
+        except Exception:
+            logger.exception('Failed to generate sources index')
 
         return file_path
 
@@ -397,9 +407,9 @@ class MarkdownGenerator:
     def _write_notes(self, f, individual: Individual):
         """
         Write the "Notes" section for an individual, including inline notes and links to separate story files.
-        
+
         If the individual has no notes and no stories, nothing is written. For each regular note, writes the note text into the section. For each story, generates or reuses a story markdown file via the generator, then writes a WikiLink to that story (prefixed with the configured stories subdirectory when present) and includes the story's description on the same line if provided.
-        
+
         Parameters:
             f: A writable text file object opened for the individual's markdown note.
             individual (Individual): The individual whose notes and stories will be rendered.
@@ -445,6 +455,107 @@ class MarkdownGenerator:
             f.write("\n")
 
         f.write("\n")
+
+    def _collapse_single_line(self, text: str) -> str:
+        """Collapse runs of whitespace into single spaces and strip the result."""
+        return " ".join(text.split()).strip() if text else ""
+
+    def _format_source_entry(self, title: str, publ: str) -> str:
+        """Return a formatted markdown line for a source entry.
+
+        If title and publ are present, title is rendered as a link to publ.
+        If only title present, render plain title. If only publ present, use the URL as link text.
+        """
+        title = self._collapse_single_line(title)
+        publ = self._collapse_single_line(publ)
+
+        if title and publ:
+            return f"[{title}]({publ})"
+        if title:
+            return title
+        if publ:
+            return f"[{publ}]({publ})"
+        return "(Unknown source)"
+
+    def _write_sources(self, f, individual: Individual):
+        """
+        Write the "Sources" section for an individual as a numbered list.
+        """
+        sources = individual.get_sources()
+        if not sources:
+            return
+
+        f.write("## Sources\n\n")
+        for i, src in enumerate(sources, 1):
+            line = self._format_source_entry(src.get("title", ""), src.get("publ", ""))
+            f.write(f"{i}. {line}\n")
+        f.write("\n")
+
+    def _generate_sources_index(self, parser):
+        """
+        Generate a summary Index.md in a sources/ subdirectory listing all SOURCE records found in the GEDCOM element dictionary.
+        """
+        try:
+            elem_dict = parser.get_element_dictionary()
+        except Exception:
+            return
+
+        sources = []
+        for elem in elem_dict.values():
+            try:
+                if elem.get_tag() != "SOUR":
+                    continue
+            except Exception:
+                continue
+
+            title = ""
+            publ = ""
+            note_text = ""
+
+            for sc in elem.get_child_elements():
+                tag = sc.get_tag()
+                if tag == "TITL":
+                    title = sc.get_value() or ""
+                elif tag == "PUBL":
+                    publ = sc.get_value() or ""
+                elif tag == "NOTE":
+                    note_val = sc.get_value() or ""
+                    if note_val.startswith("@") and note_val.endswith("@"):
+                        n_elem = elem_dict.get(note_val)
+                        if n_elem:
+                            note_text = n_elem.get_value() or ""
+                            for sub in n_elem.get_child_elements():
+                                if sub.get_tag() in ["CONT", "CONC"]:
+                                    note_text += "\n" + (sub.get_value() or "")
+                    else:
+                        for sub in sc.get_child_elements():
+                            if sub.get_tag() in ["CONT", "CONC"]:
+                                note_val += "\n" + (sub.get_value() or "")
+                        note_text = note_val
+
+            title = self._collapse_single_line(title)
+            publ = self._collapse_single_line(publ)
+            note_text = self._collapse_single_line(note_text)
+
+            if title or publ or note_text:
+                sources.append({"title": title, "publ": publ, "note": note_text})
+
+        if not sources:
+            return
+
+        sources_dir = self.output_dir / "sources"
+        sources_dir.mkdir(parents=True, exist_ok=True)
+        index_file = sources_dir / "Index.md"
+
+        with open(index_file, "w", encoding="utf-8") as f:
+            f.write("# Sources Index\n\n")
+            for i, src in enumerate(sources, 1):
+                entry = self._format_source_entry(src.get("title", ""), src.get("publ", ""))
+                f.write(f"{i}. {entry}\n")
+                note_text = src.get("note", "")
+                if note_text:
+                    f.write(f"   \n   _{note_text}_\n")
+            f.write("\n")
 
     def _write_metadata(self, f, key: str, value: str):
         """
