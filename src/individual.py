@@ -366,43 +366,111 @@ class Individual:
 
         return images
 
+    def _collapse_preserve_lines(self, text: str) -> str:
+        """Collapse whitespace within each line but preserve line breaks."""
+        if not text:
+            return ""
+        return "\n".join(" ".join(line.split()) for line in text.splitlines()).strip()
+
+    def _resolve_gedcom_text(self, value: str, element=None) -> str:
+        """Resolve a GEDCOM text value which may be a pointer to another element or inline text.
+
+        Appends CONT/CONC child lines (skipping empty ones) separated by single newlines.
+        """
+        if not value:
+            return ""
+
+        # Pointer/reference to another element (e.g., NOTE record)
+        if value.startswith("@") and value.endswith("@"):
+            target = self.gedcom.get_element_dictionary().get(value)
+            if not target:
+                return ""
+            text = target.get_value() or ""
+            # Respect CONT vs CONC semantics: CONT => newline, CONC => concatenate
+            for sub in target.get_child_elements():
+                tag = sub.get_tag()
+                val = (sub.get_value() or "")
+                if not val:
+                    continue
+                if tag == "CONC":
+                    # concatenate directly
+                    text += val
+                elif tag == "CONT":
+                    text += "\n" + val
+            return text
+
+        # Inline text with possible CONT/CONC children
+        text = value or ""
+        if element is not None:
+            for sub in element.get_child_elements():
+                tag = sub.get_tag()
+                val = (sub.get_value() or "")
+                if not val:
+                    continue
+                if tag == "CONC":
+                    text += val
+                elif tag == "CONT":
+                    text += "\n" + val
+        return text
+
     def get_notes(self) -> List[str]:
-        """
-        Return the person's notes with inline continuations and referenced NOTE records resolved.
-        
-        This resolves NOTE cross-references (values like `@X@`), appends `CONT`/`CONC` continuations, trims whitespace, and omits empty or unresolved references.
-        
-        Returns:
-            List[str]: Note texts with continuations and referenced NOTE content merged; empty or unresolved notes are omitted.
-        """
+        """Return the person's notes with continuations resolved and extraneous whitespace collapsed per-line."""
         notes = []
-
         for child in self.element.get_child_elements():
-            if child.get_tag() == "NOTE":
-                note_text = child.get_value() or ""
-
-                # If note_text starts with @, it's a reference to a NOTE record
-                if note_text.startswith("@") and note_text.endswith("@"):
-                    # Resolve the reference
-                    note_element = self.gedcom.get_element_dictionary().get(note_text)
-                    if note_element:
-                        # Get the note text from the NOTE element
-                        note_text = note_element.get_value() or ""
-
-                        # Get continued text from the NOTE record
-                        for subchild in note_element.get_child_elements():
-                            if subchild.get_tag() in ["CONT", "CONC"]:
-                                note_text += "\n" + (subchild.get_value() or "")
-                else:
-                    # Inline note - check for continued text in subchilds
-                    for subchild in child.get_child_elements():
-                        if subchild.get_tag() in ["CONT", "CONC"]:
-                            note_text += "\n" + (subchild.get_value() or "")
-
-                if note_text and not note_text.startswith("@"):
-                    notes.append(note_text.strip())
-
+            if child.get_tag() != "NOTE":
+                continue
+            raw = child.get_value() or ""
+            text = self._resolve_gedcom_text(raw, child)
+            if text and not text.startswith("@"):
+                notes.append(self._collapse_preserve_lines(text))
         return notes
+
+    def get_sources(self) -> List[Dict[str, str]]:
+        """
+        Extract SOUR references for this individual and return normalized entries.
+        Each entry is a dict: {"title": str, "publ": str, "note": str} with internal whitespace collapsed.
+
+        Handles both referenced SOURCE pointers (SOUR @X@) and inline SOURCE blocks under the individual.
+        """
+        def _collapse_single_line(text: str) -> str:
+            return " ".join(text.split()).strip() if text else ""
+
+        sources = []
+        for child in self.element.get_child_elements():
+            if child.get_tag() != "SOUR":
+                continue
+
+            title = ""
+            publ = ""
+            note_text = ""
+
+            # child may be a pointer to a SOURCE record or an inline SOURCE element
+            src_ref = child.get_value() or ""
+            if src_ref and src_ref.startswith("@"):
+                elem_to_scan = self.gedcom.get_element_dictionary().get(src_ref) or child
+            else:
+                elem_to_scan = child
+
+            for sc in elem_to_scan.get_child_elements():
+                tag = sc.get_tag()
+                if tag == "TITL":
+                    title = sc.get_value() or ""
+                elif tag == "PUBL":
+                    publ = sc.get_value() or ""
+                elif tag == "NOTE":
+                    raw_note = sc.get_value() or ""
+                    note_text = self._resolve_gedcom_text(raw_note, sc)
+
+            # Normalize whitespace for title/publ but preserve line breaks in notes
+            title = _collapse_single_line(title)
+            publ = _collapse_single_line(publ)
+
+            note_text = self._collapse_preserve_lines(note_text)
+
+            if title or publ or note_text:
+                sources.append({"title": title, "publ": publ, "note": note_text})
+
+        return sources
 
     def get_stories(self) -> List[Dict]:
         """
