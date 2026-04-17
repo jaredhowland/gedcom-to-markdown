@@ -556,20 +556,25 @@ class MarkdownGenerator:
                         if n_elem:
                             note_text = n_elem.get_value() or ""
                             for sub in n_elem.get_child_elements():
-                                if sub.get_tag() in ["CONT", "CONC"]:
-                                    cont = (sub.get_value() or "").strip()
-                                    if cont:
-                                        note_text += "\n" + cont
+                                tag_sub = sub.get_tag()
+                                val_sub = (sub.get_value() or "")
+                                if not val_sub:
+                                    continue
+                                if tag_sub == "CONC":
+                                    note_text += val_sub
+                                elif tag_sub == "CONT":
+                                    note_text += "\n" + val_sub
                     else:
-                        parts = []
-                        for sub in sc.get_child_elements():
-                            if sub.get_tag() in ["CONT", "CONC"]:
-                                cont = (sub.get_value() or "").strip()
-                                if cont:
-                                    parts.append(cont)
-                        if parts:
-                            note_val += "\n" + "\n".join(parts)
                         note_text = note_val
+                        for sub in sc.get_child_elements():
+                            tag_sub = sub.get_tag()
+                            val_sub = (sub.get_value() or "")
+                            if not val_sub:
+                                continue
+                            if tag_sub == "CONC":
+                                note_text += val_sub
+                            elif tag_sub == "CONT":
+                                note_text += "\n" + val_sub
 
             title = self._collapse_single_line(title)
             publ = self._collapse_single_line(publ)

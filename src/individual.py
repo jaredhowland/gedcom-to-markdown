@@ -386,27 +386,31 @@ class Individual:
             if not target:
                 return ""
             text = target.get_value() or ""
-            parts = []
+            # Respect CONT vs CONC semantics: CONT => newline, CONC => concatenate
             for sub in target.get_child_elements():
-                if sub.get_tag() in ("CONT", "CONC"):
-                    cont = (sub.get_value() or "").strip()
-                    if cont:
-                        parts.append(cont)
-            if parts:
-                text += "\n" + "\n".join(parts)
+                tag = sub.get_tag()
+                val = (sub.get_value() or "")
+                if not val:
+                    continue
+                if tag == "CONC":
+                    # concatenate directly
+                    text += val
+                elif tag == "CONT":
+                    text += "\n" + val
             return text
 
         # Inline text with possible CONT/CONC children
         text = value or ""
         if element is not None:
-            parts = []
             for sub in element.get_child_elements():
-                if sub.get_tag() in ("CONT", "CONC"):
-                    cont = (sub.get_value() or "").strip()
-                    if cont:
-                        parts.append(cont)
-            if parts:
-                text += "\n" + "\n".join(parts)
+                tag = sub.get_tag()
+                val = (sub.get_value() or "")
+                if not val:
+                    continue
+                if tag == "CONC":
+                    text += val
+                elif tag == "CONT":
+                    text += "\n" + val
         return text
 
     def get_notes(self) -> List[str]:
