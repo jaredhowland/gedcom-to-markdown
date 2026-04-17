@@ -366,50 +366,67 @@ class Individual:
 
         return images
 
-    def get_notes(self) -> List[str]:
-        """
-        Return the person's notes with continuations resolved and extraneous whitespace collapsed per-line.
-        """
-        def _collapse_preserve_lines(text: str) -> str:
-            if not text:
-                return ""
-            return "\n".join(" ".join(line.split()) for line in text.splitlines()).strip()
+    def _collapse_preserve_lines(self, text: str) -> str:
+        """Collapse whitespace within each line but preserve line breaks."""
+        if not text:
+            return ""
+        return "\n".join(" ".join(line.split()) for line in text.splitlines()).strip()
 
-        def _resolve_note_text(value: str, element=None) -> str:
-            if not value:
+    def _resolve_gedcom_text(self, value: str, element=None) -> str:
+        """Resolve a GEDCOM text value which may be a pointer to another element or inline text.
+
+        Appends CONT/CONC child lines (skipping empty ones) separated by single newlines.
+        """
+        if not value:
+            return ""
+
+        # Pointer/reference to another element (e.g., NOTE record)
+        if value.startswith("@") and value.endswith("@"):
+            target = self.gedcom.get_element_dictionary().get(value)
+            if not target:
                 return ""
-            # Reference to a NOTE record
-            if value.startswith("@") and value.endswith("@"):
-                note_elem = self.gedcom.get_element_dictionary().get(value)
-                if not note_elem:
-                    return ""
-                text = note_elem.get_value() or ""
-                for sub in note_elem.get_child_elements():
-                    if sub.get_tag() in ("CONT", "CONC"):
-                        text += "\n" + (sub.get_value() or "")
-                return text
-            # Inline note: include any CONT/CONC children of the element
-            text = value
-            if element is not None:
-                for sub in element.get_child_elements():
-                    if sub.get_tag() in ("CONT", "CONC"):
-                        text += "\n" + (sub.get_value() or "")
+            text = target.get_value() or ""
+            parts = []
+            for sub in target.get_child_elements():
+                if sub.get_tag() in ("CONT", "CONC"):
+                    cont = (sub.get_value() or "").strip()
+                    if cont:
+                        parts.append(cont)
+            if parts:
+                text += "\n" + "\n".join(parts)
             return text
 
+        # Inline text with possible CONT/CONC children
+        text = value or ""
+        if element is not None:
+            parts = []
+            for sub in element.get_child_elements():
+                if sub.get_tag() in ("CONT", "CONC"):
+                    cont = (sub.get_value() or "").strip()
+                    if cont:
+                        parts.append(cont)
+            if parts:
+                text += "\n" + "\n".join(parts)
+        return text
+
+    def get_notes(self) -> List[str]:
+        """Return the person's notes with continuations resolved and extraneous whitespace collapsed per-line."""
         notes = []
         for child in self.element.get_child_elements():
             if child.get_tag() != "NOTE":
                 continue
             raw = child.get_value() or ""
-            text = _resolve_note_text(raw, child)
+            text = self._resolve_gedcom_text(raw, child)
             if text and not text.startswith("@"):
-                notes.append(_collapse_preserve_lines(text))
+                notes.append(self._collapse_preserve_lines(text))
         return notes
 
     def get_sources(self) -> List[Dict[str, str]]:
         """
         Extract SOUR references for this individual and return normalized entries.
         Each entry is a dict: {"title": str, "publ": str, "note": str} with internal whitespace collapsed.
+
+        Handles both referenced SOURCE pointers (SOUR @X@) and inline SOURCE blocks under the individual.
         """
         def _collapse_single_line(text: str) -> str:
             return " ".join(text.split()).strip() if text else ""
@@ -418,44 +435,37 @@ class Individual:
         for child in self.element.get_child_elements():
             if child.get_tag() != "SOUR":
                 continue
-            src_ref = child.get_value() or ""
+
             title = ""
             publ = ""
             note_text = ""
 
-            # Resolve referenced SOURCE record
-            if src_ref.startswith("@"):
-                src_elem = self.gedcom.get_element_dictionary().get(src_ref)
-                if src_elem:
-                    for sc in src_elem.get_child_elements():
-                        tag = sc.get_tag()
-                        if tag == "TITL":
-                            title = sc.get_value() or ""
-                        elif tag == "PUBL":
-                            publ = sc.get_value() or ""
-                        elif tag == "NOTE":
-                            raw_note = sc.get_value() or ""
-                            # reuse note resolver behavior
-                            if raw_note.startswith("@") and raw_note.endswith("@"):
-                                n = self.gedcom.get_element_dictionary().get(raw_note)
-                                if n:
-                                    note_text = n.get_value() or ""
-                                    for sub in n.get_child_elements():
-                                        if sub.get_tag() in ("CONT", "CONC"):
-                                            note_text += "\n" + (sub.get_value() or "")
-                            else:
-                                note_text = raw_note
-                                for sub in sc.get_child_elements():
-                                    if sub.get_tag() in ("CONT", "CONC"):
-                                        note_text += "\n" + (sub.get_value() or "")
+            # child may be a pointer to a SOURCE record or an inline SOURCE element
+            src_ref = child.get_value() or ""
+            if src_ref and src_ref.startswith("@"):
+                elem_to_scan = self.gedcom.get_element_dictionary().get(src_ref) or child
+            else:
+                elem_to_scan = child
 
-            # Normalize whitespace
+            for sc in elem_to_scan.get_child_elements():
+                tag = sc.get_tag()
+                if tag == "TITL":
+                    title = sc.get_value() or ""
+                elif tag == "PUBL":
+                    publ = sc.get_value() or ""
+                elif tag == "NOTE":
+                    raw_note = sc.get_value() or ""
+                    note_text = self._resolve_gedcom_text(raw_note, sc)
+
+            # Normalize whitespace for title/publ but preserve line breaks in notes
             title = _collapse_single_line(title)
             publ = _collapse_single_line(publ)
-            note_text = _collapse_single_line(note_text)
+
+            note_text = self._collapse_preserve_lines(note_text)
 
             if title or publ or note_text:
                 sources.append({"title": title, "publ": publ, "note": note_text})
+
         return sources
 
     def get_stories(self) -> List[Dict]:
