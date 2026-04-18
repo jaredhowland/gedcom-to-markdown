@@ -8,8 +8,9 @@ in the family tree.
 from pathlib import Path
 from typing import List, Optional
 import logging
+import re
 
-from individual import Individual
+from individual import Individual, collapse_single_line, resolve_gedcom_text
 
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,7 @@ class MarkdownGenerator:
         self.use_subdirectories = use_subdirectories
         self.generated_stories = {}  # Track generated story files
         self.filename_map = {}  # Map from individual ID to actual filename used
+        self._sources_index_generated = False  # Ensure global sources index is created only once
 
     def _coordinate_values(
         self, data: dict, lat_key: str = "lat", long_key: str = "long"
@@ -121,6 +123,21 @@ class MarkdownGenerator:
             self._write_children(f, individual)
             self._write_images(f, individual)
             self._write_notes(f, individual)
+            # Write Sources section (if any)
+            self._write_sources(f, individual)
+
+        # Generate global sources index once if not already generated. This preserves the behavior
+        # expected by callers that invoke generate_note() directly (unit tests), while avoiding
+        # O(N^2) behavior when multiple notes are generated via generate_all().
+        if not getattr(self, '_sources_index_generated', False):
+            parser = getattr(individual, 'gedcom', None)
+            if parser:
+                try:
+                    self._generate_sources_index(parser)
+                except Exception:
+                    logger.exception('Failed to generate sources index')
+                    # Prevent repeated expensive retries on persistent failures (e.g., IO/permissions)
+                    self._sources_index_generated = True
 
         return file_path
 
@@ -430,7 +447,7 @@ class MarkdownGenerator:
     def _write_notes(self, f, individual: Individual):
         """
         Write the "Notes" section for an individual, including inline notes and links to separate story files.
-        
+
         If the individual has no notes and no stories, nothing is written. For each regular note, writes the note text into the section. For each story, generates or reuses a story markdown file via the generator, then writes a WikiLink to that story (prefixed with the configured stories subdirectory when present) and includes the story's description on the same line if provided.
 
         Parameters:
@@ -447,7 +464,13 @@ class MarkdownGenerator:
 
         # Write regular notes
         for note in notes:
-            f.write(f"{note}\n\n")
+            # Repair broken HTML tags that may span lines, then split into lines
+            repaired = self._repair_broken_html_tags(note)
+            lines = repaired.splitlines()
+            # Escape markdown in each line to avoid accidental emphasis, then write
+            esc_lines = [self._escape_markdown(ln) for ln in lines]
+            self._write_multiline_note_block(f, esc_lines, nested=False)
+            f.write("\n")
 
         # Generate separate story files and link to them
         if stories:
@@ -478,6 +501,290 @@ class MarkdownGenerator:
             f.write("\n")
 
         f.write("\n")
+
+    def _collapse_single_line(self, text: str) -> str:
+        """Normalize a single-line string's internal whitespace.
+
+        This is a thin adapter that delegates to the shared collapse_single_line
+        helper located in the individual module. It is kept on the generator
+        class for convenience and to match the previous API; callers should use
+        this method when normalizing titles and publication strings that must
+        not contain extra internal whitespace.
+        """
+        return collapse_single_line(text)
+
+    def _collapse_preserve_lines(self, text: str) -> str:
+        """Collapse runs of whitespace within each line but preserve line breaks.
+
+        Returns a string where each original line has internal whitespace collapsed
+        but newline boundaries between CONT/CONC lines are preserved.
+        """
+        if not text:
+            return ""
+        return "\n".join(" ".join(line.split()) for line in text.splitlines()).strip()
+
+    def _format_source_entry(self, title: str, publ: str) -> str:
+        """Return a formatted markdown line for a source entry.
+
+        If title and publ are present, title is rendered as a link to publ.
+        If only title present, render plain title. If only publ present, use the URL as link text.
+        Title text is escaped to prevent markdown emphasis characters from triggering formatting.
+        """
+        title = self._collapse_single_line(title)
+        publ = self._collapse_single_line(publ)
+        escaped_title = self._escape_markdown(title)
+
+        if title and publ:
+            return f"[{escaped_title}]({publ})"
+        if title:
+            return escaped_title
+        if publ:
+            return f"[{publ}]({publ})"
+        return "(Unknown source)"
+
+    def _write_sources(self, f, individual: Individual):
+        """
+        Write the "Sources" section for an individual as a numbered list.
+
+        Each source will include the formatted title/publication on the numbered line
+        and, if present, the source's NOTE text will be written as an indented
+        escaped note block beneath it (nested, non-italicized) to avoid accidental Markdown emphasis.
+        """
+        sources = individual.get_sources()
+        if not sources:
+            return
+
+        f.write("## Sources\n\n")
+        for i, src in enumerate(sources, 1):
+            line = self._format_source_entry(src.get("title", ""), src.get("publ", ""))
+            f.write(f"{i}. {line}\n")
+            note_text = src.get("note", "")
+            if note_text:
+                # Repair broken HTML tags spanning lines and escape markdown
+                note_text = self._repair_broken_html_tags(note_text)
+                lines = [self._escape_markdown(ln) for ln in note_text.splitlines()]
+                self._write_multiline_note_block(f, lines, nested=True)
+        f.write("\n")
+
+    def _generate_sources_index(self, parser):
+        """Generate a global sources Index.md from the GEDCOM element dictionary.
+
+        This method scans the parser's element dictionary for SOURCE (SOUR)
+        records and writes a single streamed Index.md file inside the output
+        'sources/' directory. To avoid using excessive memory when many source
+        records exist, entries are written to disk as they are discovered rather
+        than being accumulated in memory.
+
+        The created Index.md contains a numbered list of sources; if a source
+        has associated NOTE text, the NOTE is written as a nested, escaped
+        indented block beneath the numbered entry. The function repairs certain
+        HTML tags that may have been split across GEDCOM CONT lines and escapes
+        markdown emphasis characters in NOTE lines to avoid accidental
+        formatting.
+
+        The method sets the generator's _sources_index_generated flag on success
+        or when encountering unrecoverable errors so that subsequent calls avoid
+        re-scanning the element dictionary.
+        """
+        try:
+            elem_dict = parser.get_element_dictionary()
+        except (AttributeError, ValueError) as e:
+            logger.exception("Failed to retrieve GEDCOM element dictionary for sources index: %s", e)
+            # Prevent repeated attempts on failure
+            self._sources_index_generated = True
+            return
+        except Exception:
+            # Unexpected failure type: log at debug and mark generated to avoid retry storms
+            logger.exception("Unexpected error retrieving GEDCOM element dictionary for sources index")
+            self._sources_index_generated = True
+            return
+
+        # Stream sources to the Index.md file as we discover them to avoid
+        # accumulating a potentially very large in-memory list.
+        if self.use_subdirectories and self.output_dir and self.output_dir.parent:
+            sources_dir = self.output_dir.parent / "sources"
+        else:
+            sources_dir = self.output_dir / "sources"
+
+        i = 0
+        index_file = sources_dir / "Index.md"
+
+        # Delay creating the file and directory until the first source is found so
+        # that no empty Index.md is left behind when there are no SOUR records.
+        f = None
+        try:
+            for elem in elem_dict.values():
+                try:
+                    if elem.get_tag() != "SOUR":
+                        continue
+                except (AttributeError, ValueError) as e:
+                    logger.debug("Skipping non-source element or malformed element during sources scan: %s", e)
+                    continue
+
+                title = ""
+                publ = ""
+                note_text = ""
+
+                for sc in elem.get_child_elements():
+                    tag = sc.get_tag()
+                    if tag == "TITL":
+                        title = sc.get_value() or ""
+                    elif tag == "PUBL":
+                        publ = sc.get_value() or ""
+                    elif tag == "NOTE":
+                        note_val = sc.get_value() or ""
+                        # Use shared resolver to handle pointer vs inline NOTE with CONT/CONC semantics
+                        note_text = resolve_gedcom_text(parser, note_val, sc)
+
+                title = self._collapse_single_line(title)
+                publ = self._collapse_single_line(publ)
+                note_text = self._collapse_preserve_lines(note_text)
+
+                if title or publ or note_text:
+                    if f is None:
+                        # First source found: create directory and open file
+                        sources_dir.mkdir(parents=True, exist_ok=True)
+                        f = open(index_file, "w", encoding="utf-8")
+                        f.write("# Sources Index\n\n")
+                    i += 1
+                    entry = self._format_source_entry(title, publ)
+                    f.write(f"{i}. {entry}\n")
+                    if note_text:
+                        # Repair broken HTML tags and escape markdown
+                        note_text = self._repair_broken_html_tags(note_text)
+                        lines = [self._escape_markdown(ln) for ln in note_text.splitlines()]
+                        self._write_multiline_note_block(f, lines, nested=True)
+
+            if f is not None:
+                f.write("\n")
+        finally:
+            if f is not None:
+                f.close()
+
+        # Mark that the global sources index has been generated so we don't do this again
+        self._sources_index_generated = True
+
+    def _escape_markdown(self, text: str) -> str:
+        """Escape markdown emphasis characters in text to prevent accidental formatting.
+
+        Escapes: backslash, asterisk, underscore, backtick, and tilde.
+        Does not escape bracket characters so links still render.
+        """
+        if not text:
+            return ""
+        # Escape backslash first
+        text = text.replace("\\", "\\\\")
+        # Escape characters that trigger emphasis or code spans
+        for ch in ('*', '_', '`', '~'):
+            text = text.replace(ch, f"\\{ch}")
+        return text
+
+    def _repair_broken_html_tags(self, text: str) -> str:
+        """Repair a small set of HTML tags that may have been split across GEDCOM lines.
+
+        Some GEDCOM exports break existing HTML fragments across CONT/CONC lines,
+        which can cause HTML tags (e.g. "<br>") to be split such that Markdown
+        or HTML rendering becomes corrupted (for example "<b\nr>" becoming a
+        literal "<b" followed by "r>"). This function attempts a conservative
+        repair for a safe whitelist of simple tags by removing newline and
+        carriage return characters that occur inside a single tag token.
+
+        Notes:
+        - This is intentionally conservative: it does not attempt to join broken
+          attributes or complex tags, and it only acts on a small whitelist of
+          tag names commonly used in source text (br, b, i, strong, em, a,
+          span, div, p, ul, li).
+        - The function preserves all other tag-like text unchanged.
+
+        Returns the (possibly repaired) text.
+        """
+        if not text or '<' not in text:
+            return text
+
+        WHITELIST = {"br", "b", "i", "strong", "em", "a", "span", "div", "p", "ul", "li"}
+
+        def repl(m: re.Match) -> str:
+            raw = m.group(0)
+            content = raw[1:-1]  # inside <...>
+            # Remove newline and carriage returns to inspect tag name
+            content_no_nl = content.replace('\n', '').replace('\r', '')
+            # Extract tag name (skip leading '/')
+            name_m = re.match(r"\s*/?\s*([A-Za-z0-9]+)", content_no_nl)
+            if name_m and name_m.group(1).lower() in WHITELIST:
+                # Rebuild tag with newlines removed but preserve other spaces
+                repaired = '<' + content_no_nl + '>'
+                return repaired
+            return raw
+
+        return re.sub(r'<[^>]*>', repl, text, flags=re.DOTALL)
+
+    def _write_multiline_note_block(self, f, lines: List[str], nested: bool = True) -> None:
+        """Write a multi-line NOTE block into the open file.
+
+        This helper emits a block representing multi-line note text in a way that
+        is maximally compatible with common Markdown renderers used by editors
+        like Obsidian, BBEdit, and Nova. Two behaviors are supported:
+
+        - nested=True: Emit a nested list item. The first line is written as a
+          nested bullet ("   - first line"). Continuation lines are indented
+          and written beneath the bullet. All continuation lines except the
+          final one are suffixed with two spaces to generate an explicit
+          hard-break (<br>) in Markdown renderers. The final line is written
+          without trailing spaces so the block does not create an extra blank
+          paragraph after it.
+
+        - nested=False: Emit plain lines (no list bullet). All non-empty lines
+          except the last non-empty line are suffixed with two spaces. Empty
+          input lines are preserved as blank lines.
+
+        Parameters:
+            f: file-like writable object opened with utf-8 encoding.
+            lines: list of text lines (already escaped if required).
+            nested: whether to render the block as a nested list under a parent
+                    list item (True) or as a flat paragraph/list of lines (False).
+
+        Rationale:
+            Trailing two spaces are used to force <br> behavior in many Markdown
+            renderers. The special handling of the final line avoids producing an
+            extra blank paragraph after the note block.
+        """
+        if not lines:
+            return
+
+        total = len(lines)
+        if nested:
+            # Use 4-space indent so nested content is correctly parsed as continuation
+            # of the parent ordered list item even for multi-digit list numbers (e.g. "10.")
+            # in CommonMark-compliant renderers.
+            indent = "    "
+            cont_indent = "      "
+            # First line as a nested bullet; add two spaces if there are continuation lines
+            if total > 1:
+                f.write(f"{indent}- {lines[0]}  \n")
+            else:
+                f.write(f"{indent}- {lines[0]}\n")
+
+            for idx, cont in enumerate(lines[1:], start=1):
+                # For continuation lines, add two spaces except for the last line
+                if idx < total - 1:
+                    f.write(f"{cont_indent}{cont}  \n")
+                else:
+                    f.write(f"{cont_indent}{cont}\n")
+        else:
+            # Non-nested: add two spaces to all non-empty lines except the last non-empty
+            # Determine the index of the last non-empty line to make the decision
+            # deterministic even when the same line text appears multiple times.
+            last_non_empty_idx = next(
+                (idx for idx in range(len(lines) - 1, -1, -1) if lines[idx].strip()),
+                None,
+            )
+            for idx, ln in enumerate(lines):
+                if not ln.strip():
+                    f.write("\n")
+                elif idx == last_non_empty_idx:
+                    f.write(f"{ln}\n")
+                else:
+                    f.write(f"{ln}  \n")
 
     def _write_metadata(self, f, key: str, value: str):
         """
@@ -553,4 +860,18 @@ class MarkdownGenerator:
                 )
 
         logger.info(f"Successfully generated {len(paths)} notes")
+
+        # Generate global sources index once (expensive) using the first available parser
+        if not self._sources_index_generated:
+            parser = None
+            for ind in individuals:
+                parser = getattr(ind, 'gedcom', None)
+                if parser:
+                    break
+
+            if parser:
+                try:
+                    self._generate_sources_index(parser)
+                except Exception:
+                    logger.exception('Failed to generate sources index')
         return paths
