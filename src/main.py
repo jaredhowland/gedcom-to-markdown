@@ -11,17 +11,19 @@ __version__ = "1.0.0"
 import argparse
 import logging
 import sys
-import tempfile
 import zipfile
 import shutil
 from pathlib import Path
 from typing import Tuple, Optional, Any
 
-from gedcom_parser import GedcomParser
+from parser_io import parse_from_path
+
+# Backwards-compatible import for external callers/tests
+from gedcom_parser import GedcomParser  # noqa: E402
 from individual import Individual
 from markdown_generator import MarkdownGenerator
 from index_generator import IndexGenerator
-from canvas_generator import CanvasGenerator
+from canvas_plugin import get_canvas_plugin
 
 
 def setup_logging(verbose: bool = False):
@@ -136,6 +138,7 @@ def convert_gedcom_to_markdown(
     use_flat_structure: bool = False,
     create_canvas: bool = False,
     root_id: Optional[str] = None,
+    plugin_name: Optional[str] = None,
 ) -> int:
     """
     Convert a GEDCOM file into Obsidian-compatible Markdown notes organized on disk.
@@ -185,7 +188,8 @@ def convert_gedcom_to_markdown(
 
         # Parse GEDCOM file
         logger.info(f"Parsing GEDCOM file: {gedcom_file}")
-        parser = GedcomParser(gedcom_file)
+        # Use parse_from_path to keep file-level IO centralized
+        parser = parse_from_path(gedcom_file)
 
         # Get all individuals
         individual_elements = parser.get_individuals()
@@ -206,7 +210,13 @@ def convert_gedcom_to_markdown(
                 # Normalize GEDCOM ID if necessary
                 root_person_id = root_id if root_id.startswith("@") else f"@{root_id}@"
                 logger.info(f"Generating canvas with root person: {root_person_id}")
-                canvas_gen = CanvasGenerator(individuals, str(output_dir))
+                # Allow selecting a registered plugin by name; default resolves to bundled CanvasGenerator
+                plugin_cls = (
+                    get_canvas_plugin(plugin_name)
+                    if plugin_name
+                    else get_canvas_plugin()
+                )
+                canvas_gen = plugin_cls(individuals, str(output_dir))
                 canvas_path = canvas_gen.generate_canvas(root_person_id)
                 logger.info(f"Canvas created: {canvas_path}")
             else:
@@ -229,60 +239,50 @@ def convert_gedcom_to_markdown(
         # Copy media files if available
         if media_dir and media_dir.exists():
             logger.info(f"Copying media files to: {media_output_dir}")
+            try:
+                from media_manager import copy_media
 
-            # Allowed media extensions (case-insensitive)
-            allowed_extensions = {".jpg", ".jpeg", ".png", ".gif", ".bmp"}
+                media_map = copy_media(media_dir, media_output_dir)
+                logger.info(f"Copied {len(media_map)} media files")
+            except Exception:
+                logger.exception(
+                    "Media copying failed using MediaManager; falling back to ad-hoc copy"
+                )
+                # Fallback to previous ad-hoc behavior
+                copied_count = 0
+                skipped_count = 0
+                collision_count = 0
 
-            copied_count = 0
-            skipped_count = 0
-            collision_count = 0
-
-            # Recursively find all files in media_dir
-            for media_file in media_dir.rglob("*"):
-                # Skip directories, only process files
-                if not media_file.is_file():
-                    continue
-
-                # Filter by extension (case-insensitive)
-                if media_file.suffix.lower() not in allowed_extensions:
-                    continue
-
-                # Compute relative path to preserve directory structure
-                relative_path = media_file.relative_to(media_dir)
-                dest = media_output_dir / relative_path
-
-                # Handle filename collisions
-                if dest.exists():
-                    # Generate unique filename with numeric suffix
-                    original_dest = dest
-                    counter = 1
-                    stem = dest.stem
-                    suffix = dest.suffix
-
-                    while dest.exists():
-                        dest = dest.parent / f"{stem}_{counter}{suffix}"
-                        counter += 1
-
-                    logger.warning(
-                        f"Collision detected: {original_dest.name} -> {dest.name}"
-                    )
-                    collision_count += 1
-
-                # Ensure parent directory exists
-                dest.parent.mkdir(parents=True, exist_ok=True)
-
-                # Copy file preserving metadata
-                try:
-                    shutil.copy2(media_file, dest)
-                    copied_count += 1
-                except (IOError, OSError) as e:
-                    logger.exception(f"Failed to copy {media_file}")
-                    skipped_count += 1
-
-            logger.info(
-                f"Copied {copied_count} media files "
-                f"({collision_count} collisions resolved, {skipped_count} skipped)"
-            )
+                allowed_extensions = {".jpg", ".jpeg", ".png", ".gif", ".bmp"}
+                for media_file in media_dir.rglob("*"):
+                    if not media_file.is_file():
+                        continue
+                    if media_file.suffix.lower() not in allowed_extensions:
+                        continue
+                    relative_path = media_file.relative_to(media_dir)
+                    dest = media_output_dir / relative_path
+                    if dest.exists():
+                        original_dest = dest
+                        counter = 1
+                        stem = dest.stem
+                        suffix = dest.suffix
+                        while dest.exists():
+                            dest = dest.parent / f"{stem}_{counter}{suffix}"
+                            counter += 1
+                        logger.warning(
+                            f"Collision detected: {original_dest.name} -> {dest.name}"
+                        )
+                        collision_count += 1
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        shutil.copy2(media_file, dest)
+                        copied_count += 1
+                    except (IOError, OSError):
+                        logger.exception(f"Failed to copy {media_file}")
+                        skipped_count += 1
+                logger.info(
+                    f"Copied {copied_count} media files ({collision_count} collisions resolved, {skipped_count} skipped)"
+                )
 
         # Generate index
         logger.debug(f"create_index flag value: {create_index!r}")
@@ -402,6 +402,19 @@ def main():
     )
 
     parser.add_argument(
+        "--canvas-plugin",
+        type=str,
+        default="default",
+        help="Canvas plugin name to use (entrypoint name or 'default')",
+    )
+
+    parser.add_argument(
+        "--list-canvas-plugins",
+        action="store_true",
+        help="List available canvas plugins (discovered via entry points) and exit",
+    )
+
+    parser.add_argument(
         "--root",
         type=str,
         metavar="ID",
@@ -418,6 +431,25 @@ def main():
     setup_logging(args.verbose)
     logger = logging.getLogger(__name__)
 
+    # If requested, list available canvas plugins and exit
+    if getattr(args, "list_canvas_plugins", False):
+        try:
+            from canvas_plugin import list_plugins
+
+            plugins = list_plugins()
+            if not plugins:
+                print("No canvas plugins registered")
+            else:
+                print("Available canvas plugins:")
+                for name, cls in plugins.items():
+                    module = getattr(cls, "__module__", "")
+                    clsname = getattr(cls, "__name__", str(cls))
+                    print(f"- {name}: {module}.{clsname}")
+            return 0
+        except Exception:
+            logger.exception("Failed to list canvas plugins")
+            return 1
+
     # Validate inputs
     if not args.input.exists():
         logger.error(f"Input file not found: {args.input}")
@@ -428,34 +460,42 @@ def main():
 
     # Check if input is a ZIP file
     is_zip = args.input.suffix.lower() in [".zip", ".gedzip"]
-    temp_dir = None
     gedcom_file = args.input
     media_dir = None
 
-    try:
-        if is_zip:
-            # Extract ZIP file to temporary directory
-            temp_dir = Path(tempfile.mkdtemp(prefix="gedcom_"))
-            gedcom_file, media_dir = extract_gedzip(args.input, temp_dir)
+    # If input is a ZIP, extract to a TemporaryDirectory that is auto-cleaned
+    if is_zip:
+        import tempfile as _tempfile
 
-        # Convert
-        exit_code = convert_gedcom_to_markdown(
-            gedcom_file=gedcom_file,
-            output_dir=args.output,
-            create_index=not args.no_index,
-            media_dir=media_dir,
-            use_flat_structure=args.flat,
-            create_canvas=args.canvas,
-            root_id=args.root,
-        )
+        with _tempfile.TemporaryDirectory(prefix="gedcom_") as _tmpdir:
+            tmp_path = Path(_tmpdir)
+            gedcom_file, media_dir = extract_gedzip(args.input, tmp_path)
 
-        return exit_code
+            # Convert while tempdir is active
+            exit_code = convert_gedcom_to_markdown(
+                gedcom_file=gedcom_file,
+                output_dir=args.output,
+                create_index=not args.no_index,
+                media_dir=media_dir,
+                use_flat_structure=args.flat,
+                create_canvas=args.canvas,
+                root_id=args.root,
+                plugin_name=args.canvas_plugin,
+            )
+            return exit_code
 
-    finally:
-        # Clean up temporary directory
-        if temp_dir and temp_dir.exists():
-            logger.debug(f"Cleaning up temporary directory: {temp_dir}")
-            shutil.rmtree(temp_dir)
+    # Non-zip: convert directly
+    exit_code = convert_gedcom_to_markdown(
+        gedcom_file=gedcom_file,
+        output_dir=args.output,
+        create_index=not args.no_index,
+        media_dir=media_dir,
+        use_flat_structure=args.flat,
+        create_canvas=args.canvas,
+        root_id=args.root,
+        plugin_name=args.canvas_plugin,
+    )
+    return exit_code
 
 
 if __name__ == "__main__":

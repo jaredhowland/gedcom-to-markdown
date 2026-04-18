@@ -6,7 +6,7 @@ individual and family data.
 """
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Union
 import logging
 
 from gedcom.parser import Parser
@@ -22,19 +22,35 @@ class GedcomParser:
 
     This class wraps the python-gedcom library and provides a clean interface
     for parsing GEDCOM files and extracting individual data.
+
+    The constructor accepts either a pre-configured `gedcom.parser.Parser`
+    instance (preferred for tests and external wiring) or a Path to a GEDCOM
+    file (backwards-compatible). When given a Parser instance, no file IO is
+    performed by this class.
     """
 
-    def __init__(self, file_path: Path):
+    def __init__(self, source: Union[Parser, Path], file_path: Optional[Path] = None):
         """
-        Initialize the GedcomParser with a GEDCOM file path and parse its contents.
+        Initialize the GedcomParser.
 
         Parameters:
-            file_path (Path): Path to the GEDCOM file to open and parse.
+            source (Parser | Path): Either an instantiated python-gedcom Parser
+                (with parse_file already called) or a Path to a GEDCOM file.
+            file_path (Optional[Path]): When `source` is a Parser instance,
+                the original file Path may be passed here for metadata purposes.
 
         Raises:
-            FileNotFoundError: If the GEDCOM file does not exist.
+            FileNotFoundError: If a Path is provided and the file does not exist.
             ValueError: If parsing the GEDCOM file fails.
         """
+        # If a Parser instance is provided, use it directly (no IO)
+        if isinstance(source, Parser):
+            self.parser = source
+            self.file_path = file_path
+            return
+
+        # Otherwise, fall back to the legacy behaviour that accepts a Path
+        file_path = source
         if not file_path.exists():
             raise FileNotFoundError(f"GEDCOM file not found: {file_path}")
 
@@ -43,7 +59,6 @@ class GedcomParser:
         # Normalize line endings using utils.io.normalize_line_endings
         from utils import io as io_utils
 
-        # Read full file and normalize in-memory; if CR-only is detected we rewrite the file
         raw = self.file_path.read_bytes()
         normalized = io_utils.normalize_line_endings(raw)
 

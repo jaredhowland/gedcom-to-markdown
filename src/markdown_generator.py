@@ -12,7 +12,9 @@ import re
 
 from individual import Individual, resolve_gedcom_text
 import utils.text as text_utils
-from utils.filenames import FilenameRegistry
+from filename_mapper import FilenameRegistry  # canonical filename utility
+import io
+from io_manager import write_text_file
 
 
 logger = logging.getLogger(__name__)
@@ -107,18 +109,23 @@ class MarkdownGenerator:
 
         logger.info(f"Generating note: {filename}")
 
-        with open(file_path, "w", encoding="utf-8") as f:
-            # Write all sections
-            self._write_frontmatter(f, individual)
-            self._write_header(f, individual)
-            self._write_events(f, individual)
-            self._write_families(f, individual)
-            self._write_parents(f, individual)
-            self._write_children(f, individual)
-            self._write_images(f, individual)
-            self._write_notes(f, individual)
-            # Write Sources section (if any)
-            self._write_sources(f, individual)
+        # Build content in-memory using a StringIO buffer, then delegate writing to io_manager
+        buf = io.StringIO()
+        # Write all sections into the buffer
+        self._write_frontmatter(buf, individual)
+        self._write_header(buf, individual)
+        self._write_events(buf, individual)
+        self._write_families(buf, individual)
+        self._write_parents(buf, individual)
+        self._write_children(buf, individual)
+        self._write_images(buf, individual)
+        self._write_notes(buf, individual)
+        # Write Sources section (if any)
+        self._write_sources(buf, individual)
+
+        # Flush buffer content to disk via central IO manager
+        content = buf.getvalue()
+        write_text_file(file_path, content)
 
         # Generate global sources index once if not already generated. This preserves the behavior
         # expected by callers that invoke generate_note() directly (unit tests), while avoiding
@@ -409,43 +416,47 @@ class MarkdownGenerator:
 
         logger.debug(f"Generating story file: {filename}")
 
-        with open(file_path, "w", encoding="utf-8") as f:
-            # Write story header
-            f.write(f"# {story_title}\n\n")
+        # Build story content in-memory and write via IO manager
+        buf = io.StringIO()
+        # Write story header
+        buf.write(f"# {story_title}\n\n")
 
-            # Write description if available
-            if story["description"]:
-                f.write(f"*{story['description']}*\n\n")
+        # Write description if available
+        if story["description"]:
+            buf.write(f"*{story['description']}*\n\n")
 
-            # Link back to the individual
-            # If using subdirectories, stories are in stories/ and people are in people/
-            if self.use_subdirectories:
-                person_link = f"[[people/{individual_name}|{individual_name}]]"
-            else:
-                person_link = f"[[{individual_name}]]"
+        # Link back to the individual
+        # If using subdirectories, stories are in stories/ and people are in people/
+        if self.use_subdirectories:
+            person_link = f"[[people/{individual_name}|{individual_name}]]"
+        else:
+            person_link = f"[[{individual_name}]]"
 
-            f.write(f"**Related to:** {person_link}\n\n")
-            f.write("---\n\n")
+        buf.write(f"**Related to:** {person_link}\n\n")
+        buf.write("---\n\n")
 
-            # Write each section
-            for section in story["sections"]:
-                if section["subtitle"]:
-                    f.write(f"## {section['subtitle']}\n\n")
+        # Write each section
+        for section in story["sections"]:
+            if section["subtitle"]:
+                buf.write(f"## {section['subtitle']}\n\n")
 
-                if section["text"]:
-                    f.write(f"{section['text']}\n\n")
+            if section["text"]:
+                buf.write(f"{section['text']}\n\n")
 
-                # Write images for this section
-                if section["images"]:
-                    for img in section["images"]:
-                        title = img["title"] if img["title"] else "Image"
-                        filename_img = img["file"]
-                        # Add media subdirectory prefix if using subdirectory structure
-                        if self.use_subdirectories and self.media_subdir:
-                            image_path = f"../{self.media_subdir}/{filename_img}"
-                        else:
-                            image_path = filename_img
-                        f.write(f"![{title}]({image_path})\n\n")
+            # Write images for this section
+            if section["images"]:
+                for img in section["images"]:
+                    title = img["title"] if img["title"] else "Image"
+                    filename_img = img["file"]
+                    # Add media subdirectory prefix if using subdirectory structure
+                    if self.use_subdirectories and self.media_subdir:
+                        image_path = f"../{self.media_subdir}/{filename_img}"
+                    else:
+                        image_path = filename_img
+                    buf.write(f"![{title}]({image_path})\n\n")
+
+        # Write to disk
+        write_text_file(file_path, buf.getvalue())
 
         # Track that we've generated this story
         self.generated_stories[filename] = True

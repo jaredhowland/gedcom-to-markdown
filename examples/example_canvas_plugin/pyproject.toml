@@ -1,0 +1,11 @@
+[project]
+name = "example-canvas-plugin"
+version = "0.0.1"
+description = "Example canvas plugin for gedcom-to-markdown"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.entry-points."gedcom_to_markdown.canvas_plugins"]
+# Registers this example as the "example" plugin
+example = "example_canvas_plugin:ExampleCanvasPlugin"

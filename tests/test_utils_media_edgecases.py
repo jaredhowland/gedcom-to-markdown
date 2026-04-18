@@ -1,4 +1,3 @@
-import tempfile
 from pathlib import Path
 from utils.media import copy_media_preserve_structure
 
