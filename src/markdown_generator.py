@@ -310,7 +310,19 @@ class MarkdownGenerator:
             # Write children if they exist
             if family["children"]:
                 f.write("\n**Children:**\n")
+                partner = family.get("partner")
+                partner_pointer = (
+                    partner.get_pointer() if hasattr(partner, "get_pointer") else None
+                )
                 for child in family["children"]:
+                    # Defensive: skip rendering a child entry if their pointer matches the partner
+                    child_pointer = getattr(child, "get_pointer", lambda: None)()
+                    if child_pointer and partner_pointer and child_pointer == partner_pointer:
+                        logger.debug(
+                            "Skipping rendering child %s for family because it matches partner",
+                            child_pointer,
+                        )
+                        continue
                     f.write(
                         f"* Child: {self._wiki_link(self._get_actual_filename(child))}\n"
                     )
