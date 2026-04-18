@@ -47,7 +47,7 @@ def parse_from_path(path: Path) -> GedcomParser:
         parser.parse_file(str(path))
     except Exception as e:
         logger.exception("Failed to parse GEDCOM file: %s", e)
-        raise ValueError(f"Failed to parse GEDCOM file: {e}")
+        raise ValueError(f"Failed to parse GEDCOM file: {e}") from e
 
     # Wrap the parser in our GedcomParser (no further IO performed)
     return GedcomParser(parser, file_path=path)

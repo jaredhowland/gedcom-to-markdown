@@ -88,21 +88,34 @@ def get_canvas_plugin(name: Optional[str] = None) -> Type:
     if plugin_name in _registry:
         return _registry[plugin_name]
 
-    # Lazy default registration: import the bundled CanvasGenerator
-    try:
-        # Prefer package-local import (when running as module)
-        from canvas_generator import CanvasGenerator
-    except Exception:
-        # Fallback to package import path used by some test runners
-        from src.canvas_generator import CanvasGenerator
+    if name is None or plugin_name == "default":
+        # Lazy default registration: import the bundled CanvasGenerator
+        try:
+            # Prefer package-local import (when running as module)
+            from canvas_generator import CanvasGenerator
+        except Exception:
+            # Fallback to package import path used by some test runners
+            from src.canvas_generator import CanvasGenerator
 
-    register_canvas_plugin("default", CanvasGenerator)
+        register_canvas_plugin("default", CanvasGenerator)
+        return _registry.get(plugin_name, CanvasGenerator)
 
-    return _registry[plugin_name] if plugin_name in _registry else CanvasGenerator
+    available_plugins = ", ".join(sorted(_registry)) or "default"
+    raise ValueError(
+        f"Unknown canvas plugin: {plugin_name}. "
+        f"Available plugins: {available_plugins}"
+    )
 
 
 def list_plugins() -> Dict[str, Type]:
-    """Return a shallow copy of the plugin registry."""
+    """Return a shallow copy of the plugin registry.
+
+    Ensures the bundled default plugin is registered before returning so that
+    callers (e.g. ``--list-canvas-plugins``) always see at least the default.
+    """
     # Ensure discovered plugins are registered before listing
     discover_entrypoint_plugins()
+    # Ensure at least the bundled default is present
+    if "default" not in _registry:
+        get_canvas_plugin(None)
     return dict(_registry)

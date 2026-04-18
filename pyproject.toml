@@ -1,12 +1,16 @@
 [project]
 name = "gedcom-to-markdown"
 version = "0.1.0"
-description = "Add your description here"
+description = "Convert GEDCOM genealogy files to Obsidian-compatible Markdown notes"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "python-gedcom==1.0.0",
 ]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
 
 [project.optional-dependencies]
 # Development and test dependencies
@@ -15,15 +19,8 @@ test = [
     "pytest-cov>=4.1.0",
 ]
 
-# Example entry points for external canvas plugins. This is only an example
-# showing the entry point group name and how third-party packages can expose
-# their Canvas implementations. Replace `example_pkg.plugins:PluginClass`
-# with the actual import path of the plugin class when publishing.
-
-[project.entry-points."gedcom_to_markdown.canvas_plugins"]
-# Example registration provided by a third-party package:
-# example = "example_pkg.plugins:PluginClass"
-# Bundled plugin (example) — when packaged, an installer could register
-# the bundled implementation under a name. This example points to the
-# module path used in-development and is illustrative only.
-bundled = "src.canvas_generator:CanvasGenerator"
+# Entry points for external canvas plugins.
+# Third-party packages can expose their Canvas implementations here.
+# Example:
+#   [project.entry-points."gedcom_to_markdown.canvas_plugins"]
+#   my_plugin = "my_package.plugins:MyPluginClass"

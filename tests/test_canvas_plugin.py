@@ -22,10 +22,21 @@ def test_register_and_list_plugins():
     assert plugins["stub"] is StubPlugin
 
 
+def test_list_plugins_always_includes_default():
+    plugins = list_plugins()
+    assert "default" in plugins
+
+
 def test_get_canvas_plugin_returns_registered():
+    register_canvas_plugin("stub", StubPlugin)
     cls = get_canvas_plugin("stub")
     assert cls is StubPlugin
     inst = cls([], "/tmp")
     path = inst.generate_canvas("@I1@")
     assert isinstance(path, str)
     assert inst.called
+
+
+def test_get_canvas_plugin_raises_for_unknown():
+    with pytest.raises(ValueError, match="Unknown canvas plugin: no_such_plugin"):
+        get_canvas_plugin("no_such_plugin")

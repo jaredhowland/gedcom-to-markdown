@@ -18,7 +18,7 @@ def test_copy_media_handles_collisions(tmp_path):
     (dest1 / "images" / "photo.jpg").write_bytes(b"existing")
 
     mapping1 = media_manager.copy_media(src, dest1)
-    assert mapping1.get("images/photo.jpg") in {"photo_1.jpg", "photo_2.jpg"}
+    assert mapping1["images/photo.jpg"] == "photo_1.jpg"
     # Ensure the destination file exists and contains the source content
     dest_name1 = mapping1["images/photo.jpg"]
     assert (dest1 / "images" / dest_name1).read_bytes() == b"source-content"

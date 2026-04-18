@@ -6,6 +6,10 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
 
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
 [project.entry-points."gedcom_to_markdown.canvas_plugins"]
 # Registers this example as the "example" plugin
 example = "example_canvas_plugin:ExampleCanvasPlugin"
