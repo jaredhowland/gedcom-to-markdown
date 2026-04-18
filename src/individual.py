@@ -236,11 +236,20 @@ class Individual:
                 self._get_event_info("MARR", family)
             )
 
-            # Get children
-            children = [
-                Individual(child, self.gedcom)
-                for child in self.gedcom.get_family_members(family, "CHILD")
-            ]
+            # Get children, but defensively skip any child that is also listed as a partner
+            partner_pointers = {p.get_pointer() for p in partners}
+            children = []
+            for child in self.gedcom.get_family_members(family, "CHILD"):
+                child_pointer = child.get_pointer()
+                # Skip if child pointer equals subject or any partner pointer
+                if child_pointer == self_pointer or child_pointer in partner_pointers:
+                    logger.debug(
+                        "Skipping family child %s because it matches subject or partner for %s",
+                        child_pointer,
+                        self_pointer,
+                    )
+                    continue
+                children.append(Individual(child, self.gedcom))
 
             families.append(
                 {
