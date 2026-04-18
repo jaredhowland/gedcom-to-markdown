@@ -93,7 +93,7 @@ def sample_gedcom_content():
 def sample_gedcom_file(temp_dir, sample_gedcom_content):
     """Create a temporary GEDCOM file with sample content."""
     gedcom_path = temp_dir / "test.ged"
-    gedcom_path.write_text(sample_gedcom_content, encoding='utf-8')
+    gedcom_path.write_text(sample_gedcom_content, encoding="utf-8")
     return gedcom_path
 
 
@@ -106,7 +106,7 @@ def sample_gedcom_cr_only(temp_dir):
     """
     content = "0 HEAD\r1 SOUR TestApp\r0 @I1@ INDI\r1 NAME Test /Person/\r0 TRLR\r"
     gedcom_path = temp_dir / "test_cr.ged"
-    gedcom_path.write_bytes(content.encode('utf-8'))
+    gedcom_path.write_bytes(content.encode("utf-8"))
     return gedcom_path
 
 

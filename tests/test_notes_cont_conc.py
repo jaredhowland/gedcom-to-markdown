@@ -27,7 +27,7 @@ class TestNotesContConc:
 0 TRLR
 """
         f = tmp_path / "note.ged"
-        f.write_text(gedcom, encoding='utf-8')
+        f.write_text(gedcom, encoding="utf-8")
 
         parser = GedcomParser(f)
         individuals = parser.get_individuals()
@@ -59,7 +59,7 @@ class TestNotesContConc:
 0 TRLR
 """
         f = tmp_path / "note_ref.ged"
-        f.write_text(gedcom, encoding='utf-8')
+        f.write_text(gedcom, encoding="utf-8")
 
         parser = GedcomParser(f)
         individuals = parser.get_individuals()
@@ -91,7 +91,7 @@ class TestNotesContConc:
 0 TRLR
 """
         f = tmp_path / "sources.ged"
-        f.write_text(gedcom, encoding='utf-8')
+        f.write_text(gedcom, encoding="utf-8")
 
         parser = GedcomParser(f)
         individuals = parser.get_individuals()
@@ -102,8 +102,8 @@ class TestNotesContConc:
         # generate a person note which should also trigger sources index generation
         gen.generate_note(person)
 
-        index = out / 'sources' / 'Index.md'
+        index = out / "sources" / "Index.md"
         assert index.exists()
         content = index.read_text()
         # Ensure concatenation in source note
-        assert 'Source line-more' in content
+        assert "Source line-more" in content

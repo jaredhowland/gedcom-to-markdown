@@ -34,7 +34,7 @@ class TestGedcomParserInitialization:
     def test_init_with_invalid_gedcom(self, temp_dir):
         """Test that ValueError is raised for invalid GEDCOM content."""
         invalid_file = temp_dir / "invalid.ged"
-        invalid_file.write_text("This is not valid GEDCOM", encoding='utf-8')
+        invalid_file.write_text("This is not valid GEDCOM", encoding="utf-8")
 
         # The python-gedcom library is lenient, but we test the error handling path
         # by creating a file that will cause parsing issues
@@ -53,17 +53,17 @@ class TestLineEndingFixes:
         """Test that CR-only line endings are converted to LF."""
         # Read the original content to verify it has CR-only
         original_content = sample_gedcom_cr_only.read_bytes()
-        assert b'\r\n' not in original_content  # No CRLF
-        assert b'\r' in original_content  # Has CR
+        assert b"\r\n" not in original_content  # No CRLF
+        assert b"\r" in original_content  # Has CR
 
         # Parse the file (should trigger line ending fix)
         _parser = GedcomParser(sample_gedcom_cr_only)
 
         # Read the fixed content
         fixed_content = sample_gedcom_cr_only.read_bytes()
-        assert b'\n' in fixed_content  # Has LF
+        assert b"\n" in fixed_content  # Has LF
         # After fix, original CR should be replaced
-        assert fixed_content.count(b'\r\n') == 0  # No CRLF (we convert to LF only)
+        assert fixed_content.count(b"\r\n") == 0  # No CRLF (we convert to LF only)
 
     def test_no_fix_for_normal_line_endings(self, sample_gedcom_file):
         """Test that files with normal line endings are not modified."""
@@ -91,15 +91,19 @@ class TestIndividualExtraction:
 
         # Check that all are IndividualElement objects
         from gedcom.element.individual import IndividualElement
+
         assert all(isinstance(ind, IndividualElement) for ind in individuals)
 
     def test_get_individuals_with_empty_gedcom(self, temp_dir):
         """Test that empty GEDCOM returns no individuals."""
         empty_gedcom = temp_dir / "empty.ged"
-        empty_gedcom.write_text("""0 HEAD
+        empty_gedcom.write_text(
+            """0 HEAD
 1 SOUR TestApp
 0 TRLR
-""", encoding='utf-8')
+""",
+            encoding="utf-8",
+        )
 
         parser = GedcomParser(empty_gedcom)
         individuals = parser.get_individuals()
@@ -114,14 +118,14 @@ class TestElementLookup:
         parser = GedcomParser(sample_gedcom_file)
 
         # Look up individual I1
-        element = parser.get_element_by_pointer('@I1@')
+        element = parser.get_element_by_pointer("@I1@")
         assert element is not None
-        assert element.get_pointer() == '@I1@'
+        assert element.get_pointer() == "@I1@"
 
     def test_get_element_by_pointer_not_found(self, sample_gedcom_file):
         """Test that None is returned for non-existent pointers."""
         parser = GedcomParser(sample_gedcom_file)
-        element = parser.get_element_by_pointer('@NONEXISTENT@')
+        element = parser.get_element_by_pointer("@NONEXISTENT@")
         assert element is None
 
     def test_get_note_by_pointer(self, sample_gedcom_file):
@@ -129,15 +133,15 @@ class TestElementLookup:
         parser = GedcomParser(sample_gedcom_file)
 
         # Look up note N1
-        note = parser.get_element_by_pointer('@N1@')
+        note = parser.get_element_by_pointer("@N1@")
         assert note is not None
-        assert 'test note' in note.get_value().lower()
+        assert "test note" in note.get_value().lower()
 
     def test_get_family_by_pointer(self, sample_gedcom_file):
         """Test looking up a FAM element by pointer."""
         parser = GedcomParser(sample_gedcom_file)
 
         # Look up family F1
-        family = parser.get_element_by_pointer('@F1@')
+        family = parser.get_element_by_pointer("@F1@")
         assert family is not None
-        assert family.get_tag() == 'FAM'
+        assert family.get_tag() == "FAM"

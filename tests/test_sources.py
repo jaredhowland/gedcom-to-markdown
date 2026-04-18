@@ -27,7 +27,7 @@ class TestSourcesSection:
 0 TRLR
 """
         f = tmp_path / "sources.ged"
-        f.write_text(gedcom, encoding='utf-8')
+        f.write_text(gedcom, encoding="utf-8")
 
         parser = GedcomParser(f)
         individuals = parser.get_individuals()
@@ -38,14 +38,20 @@ class TestSourcesSection:
         note = gen.generate_note(person)
         content = note.read_text()
 
-        assert '## Sources' in content
+        assert "## Sources" in content
         # Whitespace in title should be collapsed
-        assert '1. [Overland Travels Pioneer Detail](http://history.example/pioneer?id=6262)' in content
+        assert (
+            "1. [Overland Travels Pioneer Detail](http://history.example/pioneer?id=6262)"
+            in content
+        )
         # Also an Index file should be created in sources/Index.md
-        index = out / 'sources' / 'Index.md'
+        index = out / "sources" / "Index.md"
         assert index.exists()
         idx_content = index.read_text()
-        assert '[Overland Travels Pioneer Detail](http://history.example/pioneer?id=6262)' in idx_content
+        assert (
+            "[Overland Travels Pioneer Detail](http://history.example/pioneer?id=6262)"
+            in idx_content
+        )
 
     def test_sources_title_only_no_publ(self, tmp_path):
         gedcom = """0 HEAD
@@ -61,7 +67,7 @@ class TestSourcesSection:
 0 TRLR
 """
         f = tmp_path / "sources2.ged"
-        f.write_text(gedcom, encoding='utf-8')
+        f.write_text(gedcom, encoding="utf-8")
 
         parser = GedcomParser(f)
         individuals = parser.get_individuals()
@@ -72,8 +78,8 @@ class TestSourcesSection:
         note = gen.generate_note(person)
         content = note.read_text()
 
-        assert '## Sources' in content
-        assert '1. Local Archive Record' in content
+        assert "## Sources" in content
+        assert "1. Local Archive Record" in content
 
     def test_sources_publ_but_no_title_uses_url_as_text(self, tmp_path):
         gedcom = """0 HEAD
@@ -89,7 +95,7 @@ class TestSourcesSection:
 0 TRLR
 """
         f = tmp_path / "sources3.ged"
-        f.write_text(gedcom, encoding='utf-8')
+        f.write_text(gedcom, encoding="utf-8")
 
         parser = GedcomParser(f)
         individuals = parser.get_individuals()
@@ -100,5 +106,7 @@ class TestSourcesSection:
         note = gen.generate_note(person)
         content = note.read_text()
 
-        assert '## Sources' in content
-        assert '1. [https://example.org/doc/123](https://example.org/doc/123)' in content
+        assert "## Sources" in content
+        assert (
+            "1. [https://example.org/doc/123](https://example.org/doc/123)" in content
+        )

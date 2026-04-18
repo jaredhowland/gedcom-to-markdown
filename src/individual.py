@@ -5,17 +5,18 @@ This module provides a rich data model for individuals in a family tree,
 extracting all relevant information from GEDCOM data.
 """
 
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, TYPE_CHECKING
 import logging
 import re
 
-from gedcom.element.individual import IndividualElement
-import gedcom.tags
-
+if TYPE_CHECKING:
+    # Imported for type-checking only; avoid runtime dependency on python-gedcom
+    from gedcom.element.individual import IndividualElement
 
 logger = logging.getLogger(__name__)
 
 EVENT_TAGS = {"BIRT", "DEAT", "MARR", "OCCU", "EDUC", "RESI", "BURI"}
+
 
 def collapse_single_line(text: str) -> str:
     """Normalize whitespace on a single logical line.
@@ -86,7 +87,7 @@ def resolve_gedcom_text(parser, value: str, element=None) -> str:
         # contribute a newline so paragraph breaks are preserved.
         for sub in target.get_child_elements():
             tag = sub.get_tag()
-            val = (sub.get_value() or "")
+            val = sub.get_value() or ""
             if tag == "CONC":
                 if val:
                     text += val
@@ -100,7 +101,7 @@ def resolve_gedcom_text(parser, value: str, element=None) -> str:
     if element is not None:
         for sub in element.get_child_elements():
             tag = sub.get_tag()
-            val = (sub.get_value() or "")
+            val = sub.get_value() or ""
             if tag == "CONC":
                 if val:
                     text += val
@@ -138,7 +139,7 @@ class Individual:
         Returns:
             str: The GEDCOM identifier with all '@' characters removed.
         """
-        return self.element.get_pointer().replace('@', '')
+        return self.element.get_pointer().replace("@", "")
 
     def get_pointer(self) -> str:
         """
@@ -164,7 +165,7 @@ class Individual:
     def get_names(self) -> Tuple[str, str]:
         """
         Return the individual's first and last name with surrounding whitespace removed.
-        
+
         Returns:
             tuple(first_name, last_name): The person's given name and family name, both trimmed of leading and trailing whitespace.
         """
@@ -185,23 +186,33 @@ class Individual:
         """
         Build a filename-like string for the individual in the form "FamilyName FirstName BirthYear".
 
+        Delegates to utils.filenames.make_person_filename to centralize naming rules.
         Returns:
-            filename (str): The generated filename string "FamilyName FirstName BirthYear" (or without year if unavailable); does not include a file extension; preserves original name capitalization.
+            filename (str): The generated filename string without extension.
         """
         first, last = self.get_names()
         birth_info = self.get_birth_info()
-        birth_year = birth_info.get('year', '')
+        birth_year = birth_info.get("year", "")
 
-        # Build filename parts
-        parts = []
-        if last:
-            parts.append(last)
-        if first:
-            parts.append(first)
-        if birth_year:
-            parts.append(birth_year)
+        # Delegate to shared filename helper
+        try:
+            from utils import filenames as filename_utils
 
-        return " ".join(parts)
+            return filename_utils.make_person_filename(
+                first, last, birth_year, fallback_id=self.get_id()
+            )
+        except Exception:
+            # Fallback to prior behavior if utils unavailable
+            parts = []
+            if last:
+                parts.append(last)
+            if first:
+                parts.append(first)
+            if birth_year:
+                parts.append(birth_year)
+            if parts:
+                return " ".join(parts)
+            return self.get_id()
 
     def get_birth_info(self) -> Dict[str, str]:
         """
@@ -259,7 +270,7 @@ class Individual:
         Returns:
             str: `'M'` for male, `'F'` for female, `'U'` if unspecified or unknown.
         """
-        return self.element.get_gender() or 'U'
+        return self.element.get_gender() or "U"
 
     def get_parents(self) -> List["Individual"]:
         """
@@ -281,9 +292,7 @@ class Individual:
         return [
             Individual(child, self.gedcom)
             for family in self.gedcom.get_families(self.element)
-            for child in self.gedcom.get_family_members(
-                family, gedcom.tags.GEDCOM_TAG_CHILD
-            )
+            for child in self.gedcom.get_family_members(family, "CHILD")
         ]
 
     def get_partners(self) -> List["Individual"]:
@@ -333,9 +342,7 @@ class Individual:
             # Get children
             children = [
                 Individual(child, self.gedcom)
-                for child in self.gedcom.get_family_members(
-                    family, gedcom.tags.GEDCOM_TAG_CHILD
-                )
+                for child in self.gedcom.get_family_members(family, "CHILD")
             ]
 
             families.append(
@@ -364,10 +371,10 @@ class Individual:
         self_pointer = self.element.get_pointer()
 
         for family in self.gedcom.get_root_child_elements():
-            if family.get_tag() != gedcom.tags.GEDCOM_TAG_FAMILY:
+            if family.get_tag() != "FAM":
                 continue
 
-            children = self.gedcom.get_family_members(family, gedcom.tags.GEDCOM_TAG_CHILD)
+            children = self.gedcom.get_family_members(family, "CHILD")
             if not any(child.get_pointer() == self_pointer for child in children):
                 continue
 
@@ -538,7 +545,7 @@ class Individual:
     def get_images(self) -> List[Dict[str, str]]:
         """
         Return image/media entries referenced by this individual's OBJE nodes.
-        
+
         Resolves OBJE references to their records and extracts FILE, TITL, and FORM values; entries without a FILE value are omitted.
 
         Returns:
@@ -633,7 +640,9 @@ class Individual:
             src_ref = child.get_value() or ""
             # Treat as a pointer only if it both starts and ends with '@' (e.g., @S1@)
             if src_ref and src_ref.startswith("@") and src_ref.endswith("@"):
-                elem_to_scan = self.gedcom.get_element_dictionary().get(src_ref) or child
+                elem_to_scan = (
+                    self.gedcom.get_element_dictionary().get(src_ref) or child
+                )
             else:
                 elem_to_scan = child
 
@@ -721,7 +730,9 @@ class Individual:
                                                 text += "\n" + (cont.get_value() or "")
                                         section_data["text"] = text
                                     elif sts_child.get_tag() == "OBJE":
-                                        image_info = self._get_obje_info(sts_child.get_value())
+                                        image_info = self._get_obje_info(
+                                            sts_child.get_value()
+                                        )
                                         if image_info:
                                             section_data["images"].append(image_info)
 

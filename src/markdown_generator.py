@@ -10,7 +10,9 @@ from typing import List, Optional
 import logging
 import re
 
-from individual import Individual, collapse_single_line, resolve_gedcom_text
+from individual import Individual, resolve_gedcom_text
+import utils.text as text_utils
+from utils.filenames import FilenameRegistry
 
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,7 @@ class MarkdownGenerator:
         stories_subdir: str = "",
         stories_dir: Optional[Path] = None,
         use_subdirectories: bool = False,
+        filename_registry: FilenameRegistry | None = None,
     ):
         """
         Configure the MarkdownGenerator with paths and optional subdirectories for media and story files.
@@ -41,6 +44,7 @@ class MarkdownGenerator:
             stories_subdir (str): Optional subdirectory name (relative) to use when constructing wiki links to generated story notes.
             stories_dir (Optional[Path]): Optional directory where story markdown files will be created; defaults to `output_dir` when not provided.
             use_subdirectories (bool): Whether the output structure uses subdirectories (people/, stories/, media/). When True, WikiLinks and image paths will include appropriate subdirectory prefixes.
+            filename_registry (FilenameRegistry | None): Optional registry instance to assign deterministic unique filenames across multiple generators; created when not provided.
 
         Raises:
             ValueError: If `output_dir` does not exist or is not a directory.
@@ -56,8 +60,13 @@ class MarkdownGenerator:
         self.stories_dir = stories_dir if stories_dir else output_dir
         self.use_subdirectories = use_subdirectories
         self.generated_stories = {}  # Track generated story files
-        self.filename_map = {}  # Map from individual ID to actual filename used
-        self._sources_index_generated = False  # Ensure global sources index is created only once
+        # filename_map remains for compatibility; it will reflect the registry mapping
+        self.filename_map = {}
+        # Use provided registry or create a new one for deterministic naming
+        self.filename_registry = filename_registry or FilenameRegistry()
+        self._sources_index_generated = (
+            False  # Ensure global sources index is created only once
+        )
 
     def _coordinate_values(
         self, data: dict, lat_key: str = "lat", long_key: str = "long"
@@ -74,25 +83,10 @@ class MarkdownGenerator:
 
     def _get_unique_filename(self, base_name: str, individual_id: str) -> str:
         """
-        Get a unique filename for an individual, handling duplicates by adding (1), (2), etc.
-
-        Parameters:
-            base_name (str): Base filename without extension (e.g., "Kucera Alexander Maximilian")
-            individual_id (str): The individual's GEDCOM ID
-
-        Returns:
-            str: Unique filename without extension (e.g., "Kucera Alexander Maximilian (1)")
+        Use the FilenameRegistry to reserve and return a deterministic unique name.
         """
-        # Check if this base name has been used before
-        counter = 1
-        used_names = set(self.filename_map.values())
-        unique_name = base_name
-
-        while unique_name in used_names:
-            unique_name = f"{base_name} ({counter})"
-            counter += 1
-
-        # Store the mapping
+        unique_name = self.filename_registry.reserve(individual_id, base_name)
+        # Keep compatibility mapping
         self.filename_map[individual_id] = unique_name
         return unique_name
 
@@ -129,13 +123,13 @@ class MarkdownGenerator:
         # Generate global sources index once if not already generated. This preserves the behavior
         # expected by callers that invoke generate_note() directly (unit tests), while avoiding
         # O(N^2) behavior when multiple notes are generated via generate_all().
-        if not getattr(self, '_sources_index_generated', False):
-            parser = getattr(individual, 'gedcom', None)
+        if not getattr(self, "_sources_index_generated", False):
+            parser = getattr(individual, "gedcom", None)
             if parser:
                 try:
                     self._generate_sources_index(parser)
                 except Exception:
-                    logger.exception('Failed to generate sources index')
+                    logger.exception("Failed to generate sources index")
                     # Prevent repeated expensive retries on persistent failures (e.g., IO/permissions)
                     self._sources_index_generated = True
 
@@ -153,7 +147,7 @@ class MarkdownGenerator:
 
         birth = individual.get_birth_info()
         death = individual.get_death_info()
-        fs_id = individual.get_fs_id()
+        fs_id = getattr(individual, "get_fs_id", lambda: "")()
 
         f.write(f"ID: {individual.get_id()}\n")
         if fs_id:
@@ -161,27 +155,33 @@ class MarkdownGenerator:
         f.write(f"Name: {individual.get_full_name()}\n")
 
         # Lived years
-        if birth['year'] or death['year']:
-            lived = f"{birth['year']}-{death['year']}"
+        birth_year = birth.get("year", "")
+        death_year = death.get("year", "")
+        if birth_year or death_year:
+            lived = f"{birth_year}-{death_year}"
             f.write(f"Lived: {lived}\n")
 
         f.write(f"Sex: {individual.get_gender()}\n")
 
         # Birth details
-        if birth["date"]:
-            f.write(f"Born: {birth['date']}\n")
-        if birth["place"]:
-            f.write(f"Place of birth: {birth['place']}\n")
+        birth_date = birth.get("date", "")
+        birth_place = birth.get("place", "")
+        if birth_date:
+            f.write(f"Born: {birth_date}\n")
+        if birth_place:
+            f.write(f"Place of birth: {birth_place}\n")
         # Birth coordinates should be emitted even if place is empty
         birth_coords = self._coordinate_values(birth)
         if birth_coords:
             f.write(f"Birth coordinates: {', '.join(birth_coords)}\n")
 
         # Death details
-        if death["date"]:
-            f.write(f"Passed away: {death['date']}\n")
-        if death["place"]:
-            f.write(f"Place of death: {death['place']}\n")
+        death_date = death.get("date", "")
+        death_place = death.get("place", "")
+        if death_date:
+            f.write(f"Passed away: {death_date}\n")
+        if death_place:
+            f.write(f"Place of death: {death_place}\n")
         # Death coordinates should be emitted even if place is empty
         death_coords = self._coordinate_values(death)
         if death_coords:
@@ -215,10 +215,10 @@ class MarkdownGenerator:
             f: A writable text file object positioned where the section should be written.
             individual (Individual): An object providing event data via get_events(), where each event is a dict containing at least 'type', 'date', 'place', and 'details'.
         """
-        events = individual.get_events()
+        events = getattr(individual, "get_events", lambda: [])()
 
         # Filter out birth and death (already in attributes)
-        other_events = [e for e in events if e["type"] not in ["BIRT", "DEAT"]]
+        other_events = [e for e in events if e.get("type") not in ["BIRT", "DEAT"]]
 
         if not other_events:
             return
@@ -234,20 +234,24 @@ class MarkdownGenerator:
         }
 
         for event in other_events:
-            event_type = event_names.get(event["type"], event["type"])
+            etag = event.get("type", "")
+            event_type = event_names.get(etag, etag)
             f.write(f"### {event_type}\n")
 
-            if event["date"]:
-                f.write(f"- **Date**: {event['date']}\n")
+            date = event.get("date", "")
+            if date:
+                f.write(f"- **Date**: {date}\n")
 
             # Always compute coordinates, emit regardless of whether place is present
             coords = self._coordinate_values(event)
-            if event["place"]:
-                f.write(f"- **Place**: {event['place']}\n")
+            place = event.get("place", "")
+            if place:
+                f.write(f"- **Place**: {place}\n")
             if coords:
                 f.write(f"- **Coordinates**: {', '.join(coords)}\n")
-            if event["details"]:
-                f.write(f"- **Details**: {event['details']}\n")
+            details = event.get("details", "")
+            if details:
+                f.write(f"- **Details**: {details}\n")
 
             f.write("\n")
 
@@ -293,7 +297,9 @@ class MarkdownGenerator:
             if family["children"]:
                 f.write("\n**Children:**\n")
                 for child in family["children"]:
-                    f.write(f"* Child: {self._wiki_link(self._get_actual_filename(child))}\n")
+                    f.write(
+                        f"* Child: {self._wiki_link(self._get_actual_filename(child))}\n"
+                    )
 
             f.write("\n")
 
@@ -309,7 +315,7 @@ class MarkdownGenerator:
             f: A writable file-like object opened for the individual's markdown note.
             individual (Individual): The individual whose parents should be written.
         """
-        parents = individual.get_parents()
+        parents = getattr(individual, "get_parents", lambda: [])()
 
         if not parents:
             return
@@ -328,10 +334,10 @@ class MarkdownGenerator:
         Does nothing if the individual has any families or has no children.
         """
         # Skip if we already wrote families section
-        if individual.get_families():
+        if getattr(individual, "get_families", lambda: [])():
             return
 
-        children = individual.get_children()
+        children = getattr(individual, "get_children", lambda: [])()
 
         if not children:
             return
@@ -353,7 +359,7 @@ class MarkdownGenerator:
             f: A writable file-like object positioned where the section should be emitted.
             individual (Individual): The individual whose images are written. Expects items from individual.get_images() to be dicts with keys 'file' (filename) and optional 'title'.
         """
-        images = individual.get_images()
+        images = getattr(individual, "get_images", lambda: [])()
 
         if not images:
             return
@@ -361,8 +367,11 @@ class MarkdownGenerator:
         f.write("## Images\n")
 
         for image in images:
-            title = image["title"] if image["title"] else "Image"
-            filename = image["file"]
+            title = image.get("title", "") if isinstance(image, dict) else ""
+            title = title if title else "Image"
+            filename = image.get("file", "") if isinstance(image, dict) else ""
+            if not filename:
+                continue
             # Add media subdirectory prefix if specified
             if self.media_subdir:
                 image_path = f"{self.media_subdir}/{filename}"
@@ -454,8 +463,8 @@ class MarkdownGenerator:
             f: A writable text file object opened for the individual's markdown note.
             individual (Individual): The individual whose notes and stories will be rendered.
         """
-        notes = individual.get_notes()
-        stories = individual.get_stories()
+        notes = getattr(individual, "get_notes", lambda: [])()
+        stories = getattr(individual, "get_stories", lambda: [])()
 
         if not notes and not stories:
             return
@@ -505,23 +514,16 @@ class MarkdownGenerator:
     def _collapse_single_line(self, text: str) -> str:
         """Normalize a single-line string's internal whitespace.
 
-        This is a thin adapter that delegates to the shared collapse_single_line
-        helper located in the individual module. It is kept on the generator
-        class for convenience and to match the previous API; callers should use
-        this method when normalizing titles and publication strings that must
-        not contain extra internal whitespace.
+        Delegates to utils.text.collapse_single_line to centralize text helpers.
         """
-        return collapse_single_line(text)
+        return text_utils.collapse_single_line(text)
 
     def _collapse_preserve_lines(self, text: str) -> str:
         """Collapse runs of whitespace within each line but preserve line breaks.
 
-        Returns a string where each original line has internal whitespace collapsed
-        but newline boundaries between CONT/CONC lines are preserved.
+        Delegates to utils.text.collapse_preserve_lines.
         """
-        if not text:
-            return ""
-        return "\n".join(" ".join(line.split()) for line in text.splitlines()).strip()
+        return text_utils.collapse_preserve_lines(text)
 
     def _format_source_entry(self, title: str, publ: str) -> str:
         """Return a formatted markdown line for a source entry.
@@ -550,7 +552,7 @@ class MarkdownGenerator:
         and, if present, the source's NOTE text will be written as an indented
         escaped note block beneath it (nested, non-italicized) to avoid accidental Markdown emphasis.
         """
-        sources = individual.get_sources()
+        sources = getattr(individual, "get_sources", lambda: [])()
         if not sources:
             return
 
@@ -589,13 +591,17 @@ class MarkdownGenerator:
         try:
             elem_dict = parser.get_element_dictionary()
         except (AttributeError, ValueError) as e:
-            logger.exception("Failed to retrieve GEDCOM element dictionary for sources index: %s", e)
+            logger.exception(
+                "Failed to retrieve GEDCOM element dictionary for sources index: %s", e
+            )
             # Prevent repeated attempts on failure
             self._sources_index_generated = True
             return
         except Exception:
             # Unexpected failure type: log at debug and mark generated to avoid retry storms
-            logger.exception("Unexpected error retrieving GEDCOM element dictionary for sources index")
+            logger.exception(
+                "Unexpected error retrieving GEDCOM element dictionary for sources index"
+            )
             self._sources_index_generated = True
             return
 
@@ -618,7 +624,10 @@ class MarkdownGenerator:
                     if elem.get_tag() != "SOUR":
                         continue
                 except (AttributeError, ValueError) as e:
-                    logger.debug("Skipping non-source element or malformed element during sources scan: %s", e)
+                    logger.debug(
+                        "Skipping non-source element or malformed element during sources scan: %s",
+                        e,
+                    )
                     continue
 
                 title = ""
@@ -652,7 +661,9 @@ class MarkdownGenerator:
                     if note_text:
                         # Repair broken HTML tags and escape markdown
                         note_text = self._repair_broken_html_tags(note_text)
-                        lines = [self._escape_markdown(ln) for ln in note_text.splitlines()]
+                        lines = [
+                            self._escape_markdown(ln) for ln in note_text.splitlines()
+                        ]
                         self._write_multiline_note_block(f, lines, nested=True)
 
             if f is not None:
@@ -667,124 +678,26 @@ class MarkdownGenerator:
     def _escape_markdown(self, text: str) -> str:
         """Escape markdown emphasis characters in text to prevent accidental formatting.
 
-        Escapes: backslash, asterisk, underscore, backtick, and tilde.
-        Does not escape bracket characters so links still render.
+        Delegates to utils.text.escape_markdown.
         """
-        if not text:
-            return ""
-        # Escape backslash first
-        text = text.replace("\\", "\\\\")
-        # Escape characters that trigger emphasis or code spans
-        for ch in ('*', '_', '`', '~'):
-            text = text.replace(ch, f"\\{ch}")
-        return text
+        return text_utils.escape_markdown(text)
 
     def _repair_broken_html_tags(self, text: str) -> str:
         """Repair a small set of HTML tags that may have been split across GEDCOM lines.
 
-        Some GEDCOM exports break existing HTML fragments across CONT/CONC lines,
-        which can cause HTML tags (e.g. "<br>") to be split such that Markdown
-        or HTML rendering becomes corrupted (for example "<b\nr>" becoming a
-        literal "<b" followed by "r>"). This function attempts a conservative
-        repair for a safe whitelist of simple tags by removing newline and
-        carriage return characters that occur inside a single tag token.
-
-        Notes:
-        - This is intentionally conservative: it does not attempt to join broken
-          attributes or complex tags, and it only acts on a small whitelist of
-          tag names commonly used in source text (br, b, i, strong, em, a,
-          span, div, p, ul, li).
-        - The function preserves all other tag-like text unchanged.
-
-        Returns the (possibly repaired) text.
+        Delegates to utils.text.repair_broken_html_tags for conservative repairs.
         """
-        if not text or '<' not in text:
-            return text
+        return text_utils.repair_broken_html_tags(text)
 
-        WHITELIST = {"br", "b", "i", "strong", "em", "a", "span", "div", "p", "ul", "li"}
-
-        def repl(m: re.Match) -> str:
-            raw = m.group(0)
-            content = raw[1:-1]  # inside <...>
-            # Remove newline and carriage returns to inspect tag name
-            content_no_nl = content.replace('\n', '').replace('\r', '')
-            # Extract tag name (skip leading '/')
-            name_m = re.match(r"\s*/?\s*([A-Za-z0-9]+)", content_no_nl)
-            if name_m and name_m.group(1).lower() in WHITELIST:
-                # Rebuild tag with newlines removed but preserve other spaces
-                repaired = '<' + content_no_nl + '>'
-                return repaired
-            return raw
-
-        return re.sub(r'<[^>]*>', repl, text, flags=re.DOTALL)
-
-    def _write_multiline_note_block(self, f, lines: List[str], nested: bool = True) -> None:
+    def _write_multiline_note_block(
+        self, f, lines: List[str], nested: bool = True
+    ) -> None:
         """Write a multi-line NOTE block into the open file.
 
-        This helper emits a block representing multi-line note text in a way that
-        is maximally compatible with common Markdown renderers used by editors
-        like Obsidian, BBEdit, and Nova. Two behaviors are supported:
-
-        - nested=True: Emit a nested list item. The first line is written as a
-          nested bullet ("   - first line"). Continuation lines are indented
-          and written beneath the bullet. All continuation lines except the
-          final one are suffixed with two spaces to generate an explicit
-          hard-break (<br>) in Markdown renderers. The final line is written
-          without trailing spaces so the block does not create an extra blank
-          paragraph after it.
-
-        - nested=False: Emit plain lines (no list bullet). All non-empty lines
-          except the last non-empty line are suffixed with two spaces. Empty
-          input lines are preserved as blank lines.
-
-        Parameters:
-            f: file-like writable object opened with utf-8 encoding.
-            lines: list of text lines (already escaped if required).
-            nested: whether to render the block as a nested list under a parent
-                    list item (True) or as a flat paragraph/list of lines (False).
-
-        Rationale:
-            Trailing two spaces are used to force <br> behavior in many Markdown
-            renderers. The special handling of the final line avoids producing an
-            extra blank paragraph after the note block.
+        Delegates to the shared utils.text.write_multiline_note_block implementation
+        to keep rendering behavior centralized and consistent across callers.
         """
-        if not lines:
-            return
-
-        total = len(lines)
-        if nested:
-            # Use 4-space indent so nested content is correctly parsed as continuation
-            # of the parent ordered list item even for multi-digit list numbers (e.g. "10.")
-            # in CommonMark-compliant renderers.
-            indent = "    "
-            cont_indent = "      "
-            # First line as a nested bullet; add two spaces if there are continuation lines
-            if total > 1:
-                f.write(f"{indent}- {lines[0]}  \n")
-            else:
-                f.write(f"{indent}- {lines[0]}\n")
-
-            for idx, cont in enumerate(lines[1:], start=1):
-                # For continuation lines, add two spaces except for the last line
-                if idx < total - 1:
-                    f.write(f"{cont_indent}{cont}  \n")
-                else:
-                    f.write(f"{cont_indent}{cont}\n")
-        else:
-            # Non-nested: add two spaces to all non-empty lines except the last non-empty
-            # Determine the index of the last non-empty line to make the decision
-            # deterministic even when the same line text appears multiple times.
-            last_non_empty_idx = next(
-                (idx for idx in range(len(lines) - 1, -1, -1) if lines[idx].strip()),
-                None,
-            )
-            for idx, ln in enumerate(lines):
-                if not ln.strip():
-                    f.write("\n")
-                elif idx == last_non_empty_idx:
-                    f.write(f"{ln}\n")
-                else:
-                    f.write(f"{ln}  \n")
+        return text_utils.write_multiline_note_block(f, lines, nested)
 
     def _write_metadata(self, f, key: str, value: str):
         """
@@ -865,7 +778,7 @@ class MarkdownGenerator:
         if not self._sources_index_generated:
             parser = None
             for ind in individuals:
-                parser = getattr(ind, 'gedcom', None)
+                parser = getattr(ind, "gedcom", None)
                 if parser:
                     break
 
@@ -873,5 +786,5 @@ class MarkdownGenerator:
                 try:
                     self._generate_sources_index(parser)
                 except Exception:
-                    logger.exception('Failed to generate sources index')
+                    logger.exception("Failed to generate sources index")
         return paths
