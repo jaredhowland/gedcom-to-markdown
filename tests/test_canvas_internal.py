@@ -1,4 +1,4 @@
-from src.canvas_generator import CanvasGenerator
+from canvas_generator import CanvasGenerator
 
 
 class DummyIndividual:

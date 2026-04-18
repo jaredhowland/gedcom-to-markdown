@@ -297,24 +297,6 @@ def convert_gedcom_to_markdown(
             )
             index_path = index_gen.generate_index(individuals)
             logger.info(f"Created index file: {index_path}")
-        else:
-            # Defensive: remove any stray Index.md files that might exist from prior
-            # runs or unexpected generator behavior when the caller explicitly
-            # disabled index creation. Remove any Index.md found in the output
-            # directory subtree to keep test expectations deterministic.
-            try:
-                # Remove Index.md case-insensitively to handle filesystems that
-                # may generate 'index.md' or other variants.
-                for idx in output_dir.rglob("*"):
-                    try:
-                        if idx.is_file() and idx.name.lower() == "index.md":
-                            logger.debug(f"Removing stray Index.md: {idx}")
-                            idx.unlink()
-                    except Exception:
-                        logger.exception(f"Failed to remove stray Index.md: {idx}")
-            except Exception:
-                logger.exception("Failed to scan for stray Index.md files")
-
         logger.info("Conversion completed successfully")
         return 0
 

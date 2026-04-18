@@ -14,7 +14,7 @@ import uuid
 from typing import List, Dict, Tuple, Optional, Any
 from collections import deque
 from individual import Individual
-from canvas_layout import calculate_family_height, get_siblings, calculate_subtree_widths
+from canvas_layout import calculate_subtree_widths
 
 
 logger = logging.getLogger(__name__)

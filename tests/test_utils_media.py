@@ -1,6 +1,6 @@
 import tempfile
 from pathlib import Path
-from src.utils.media import copy_media_preserve_structure
+from utils.media import copy_media_preserve_structure
 
 
 def write_file(p: Path, data: bytes = b"x"):

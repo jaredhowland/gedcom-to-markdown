@@ -5,6 +5,8 @@ This module provides a rich data model for individuals in a family tree,
 extracting all relevant information from GEDCOM data.
 """
 
+from __future__ import annotations
+
 from typing import List, Dict, Tuple, Optional, TYPE_CHECKING
 import logging
 import re

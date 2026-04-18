@@ -14,8 +14,6 @@ from __future__ import annotations
 import logging
 import zipfile
 from pathlib import Path
-import shutil
-import re
 import sys
 from typing import Optional, Tuple
 import utils.logging as utils_logging
@@ -40,19 +38,6 @@ def extract_gedzip(
     from utils import io as io_utils
 
     return io_utils.extract_gedzip(zip_path, extract_dir)
-
-
-def _fix_line_endings(text: bytes) -> str:
-    # Detect CR-only files and normalize to LF
-    try:
-        decoded = text.decode("utf-8")
-    except Exception:
-        decoded = text.decode("utf-8", errors="ignore")
-    if "\r" in decoded and "\n" not in decoded:
-        decoded = decoded.replace("\r", "\n")
-    # Normalize CRLF to LF
-    decoded = decoded.replace("\r\n", "\n")
-    return decoded
 
 
 def convert_gedcom_to_markdown(

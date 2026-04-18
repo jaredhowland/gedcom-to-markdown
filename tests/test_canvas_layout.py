@@ -1,4 +1,4 @@
-from src.canvas_layout import calculate_subtree_widths
+from canvas_layout import calculate_subtree_widths
 
 
 def test_chain_widths():
