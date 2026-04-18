@@ -168,7 +168,19 @@ class CanvasGenerator:
                 children = family.get("children", [])
                 for child in children:
                     child_id = getattr(child, "get_pointer", lambda: None)()
-                    if child_id and child_id not in structure[person_id]["children"]:
+                    # Skip if child_id is same as partner/spouse — ensure spouses are
+                    # never listed as children. Also skip if child is already marked as spouse.
+                    partner_id = getattr(partner, "get_pointer", lambda: None)() if partner else None
+                    if not child_id:
+                        continue
+                    if child_id == partner_id or child_id in structure[person_id]["spouses"]:
+                        logger.debug(
+                            "Skipping child %s for %s because they are listed as spouse",
+                            child_id,
+                            person_id,
+                        )
+                        continue
+                    if child_id not in structure[person_id]["children"]:
                         structure[person_id]["children"].append(child_id)
                         if child_id not in visited:
                             queue.append((child_id, generation + 1))
