@@ -24,12 +24,12 @@ class TestIndexGeneratorInitialization:
         """Test basic initialization."""
         generator = IndexGenerator(output_dir)
         assert generator.output_dir == output_dir
-        assert generator.people_subdir == ''
+        assert generator.people_subdir == ""
 
     def test_init_with_people_subdir(self, output_dir):
         """Test initialization with people subdirectory."""
-        generator = IndexGenerator(output_dir, people_subdir='people')
-        assert generator.people_subdir == 'people'
+        generator = IndexGenerator(output_dir, people_subdir="people")
+        assert generator.people_subdir == "people"
 
 
 class TestIndexGeneration:
@@ -48,19 +48,19 @@ class TestIndexGeneration:
         index_path = generator.generate_index(individuals)
 
         assert index_path.exists()
-        assert index_path.name == 'Index.md'
+        assert index_path.name == "Index.md"
 
         content = index_path.read_text()
-        assert '# Family Tree Index' in content
-        assert f'Total individuals: {len(individuals)}' in content
+        assert "# Family Tree Index" in content
+        assert f"Total individuals: {len(individuals)}" in content
 
     def test_custom_index_filename(self, output_dir, individuals):
         """Test index generation with custom filename."""
         generator = IndexGenerator(output_dir)
-        index_path = generator.generate_index(individuals, index_filename='MyIndex.md')
+        index_path = generator.generate_index(individuals, index_filename="MyIndex.md")
 
         assert index_path.exists()
-        assert index_path.name == 'MyIndex.md'
+        assert index_path.name == "MyIndex.md"
 
     def test_index_content_has_individuals(self, output_dir, individuals):
         """Test that all individuals are included in index."""
@@ -69,9 +69,9 @@ class TestIndexGeneration:
         content = index_path.read_text()
 
         # Check for presence of individuals
-        assert 'John' in content or 'Doe' in content
-        assert 'Jane' in content or 'Smith' in content
-        assert 'Alice' in content
+        assert "John" in content or "Doe" in content
+        assert "Jane" in content or "Smith" in content
+        assert "Alice" in content
 
 
 class TestAlphabeticalSorting:
@@ -100,7 +100,7 @@ class TestAlphabeticalSorting:
 0 TRLR
 """
         temp_file = temp_dir / "mixed.ged"
-        temp_file.write_text(gedcom_content, encoding='utf-8')
+        temp_file.write_text(gedcom_content, encoding="utf-8")
 
         parser = GedcomParser(temp_file)
         elements = parser.get_individuals()
@@ -113,27 +113,31 @@ class TestAlphabeticalSorting:
         content = index_path.read_text()
 
         # Find positions of last names in content
-        anderson_pos = content.find('Anderson')
-        brown_pos = content.find('Brown')
-        smith_pos = content.find('Smith')
+        anderson_pos = content.find("Anderson")
+        brown_pos = content.find("Brown")
+        smith_pos = content.find("Smith")
 
         # Anderson should come before Brown, Brown before Smith
         assert anderson_pos < brown_pos < smith_pos
 
-    def test_sorting_by_first_name_within_last_name(self, output_dir, mixed_individuals):
+    def test_sorting_by_first_name_within_last_name(
+        self, output_dir, mixed_individuals
+    ):
         """Test that individuals with same last name are sorted by first name."""
         generator = IndexGenerator(output_dir)
         index_path = generator.generate_index(mixed_individuals)
         content = index_path.read_text()
 
         # Among Andersons, Charlie should come before Zoe
-        lines = content.split('\n')
-        anderson_lines = [line for line in lines if 'Anderson' in line]
+        lines = content.split("\n")
+        anderson_lines = [line for line in lines if "Anderson" in line]
 
         # Should be ordered: Charlie, Zoe
         assert len(anderson_lines) >= 2
-        charlie_idx = next(i for i, line in enumerate(anderson_lines) if 'Charlie' in line)
-        zoe_idx = next(i for i, line in enumerate(anderson_lines) if 'Zoe' in line)
+        charlie_idx = next(
+            i for i, line in enumerate(anderson_lines) if "Charlie" in line
+        )
+        zoe_idx = next(i for i, line in enumerate(anderson_lines) if "Zoe" in line)
         assert charlie_idx < zoe_idx
 
 
@@ -159,7 +163,7 @@ class TestLetterGrouping:
 0 TRLR
 """
         temp_file = temp_dir / "varied.ged"
-        temp_file.write_text(gedcom_content, encoding='utf-8')
+        temp_file.write_text(gedcom_content, encoding="utf-8")
 
         parser = GedcomParser(temp_file)
         elements = parser.get_individuals()
@@ -172,10 +176,10 @@ class TestLetterGrouping:
         content = index_path.read_text()
 
         # Should have headers for A, B, C, D
-        assert '## A' in content
-        assert '## B' in content
-        assert '## C' in content
-        assert '## D' in content
+        assert "## A" in content
+        assert "## B" in content
+        assert "## C" in content
+        assert "## D" in content
 
     def test_individuals_under_correct_letter(self, output_dir, varied_individuals):
         """Test that individuals appear under correct letter header."""
@@ -184,15 +188,15 @@ class TestLetterGrouping:
         content = index_path.read_text()
 
         # Split by letter headers
-        sections = content.split('## ')
+        sections = content.split("## ")
 
         # Find section A and verify Adams is in it
-        a_section = next(s for s in sections if s.startswith('A\n'))
-        assert 'Adams' in a_section
+        a_section = next(s for s in sections if s.startswith("A\n"))
+        assert "Adams" in a_section
 
         # Find section B and verify Brown is in it
-        b_section = next(s for s in sections if s.startswith('B\n'))
-        assert 'Brown' in b_section
+        b_section = next(s for s in sections if s.startswith("B\n"))
+        assert "Brown" in b_section
 
     def test_no_last_name_handling(self, temp_dir, output_dir):
         """Test handling of individuals without last names."""
@@ -206,7 +210,7 @@ class TestLetterGrouping:
 0 TRLR
 """
         temp_file = temp_dir / "no_last.ged"
-        temp_file.write_text(gedcom_content, encoding='utf-8')
+        temp_file.write_text(gedcom_content, encoding="utf-8")
 
         parser = GedcomParser(temp_file)
         elements = parser.get_individuals()
@@ -217,7 +221,7 @@ class TestLetterGrouping:
         content = index_path.read_text()
 
         # Should have # header for individuals without last name
-        assert '## #' in content
+        assert "## #" in content
 
 
 class TestWikiLinkFormatting:
@@ -237,16 +241,16 @@ class TestWikiLinkFormatting:
         content = index_path.read_text()
 
         # Should have simple WikiLinks
-        assert '[[Doe John 1950]]' in content or '[[' in content
+        assert "[[Doe John 1950]]" in content or "[[" in content
 
     def test_wiki_links_with_subdirs(self, output_dir, individuals_with_dates):
         """Test WikiLink format with people subdirectory."""
-        generator = IndexGenerator(output_dir, people_subdir='people')
+        generator = IndexGenerator(output_dir, people_subdir="people")
         index_path = generator.generate_index(individuals_with_dates)
         content = index_path.read_text()
 
         # Should have WikiLinks with people/ prefix
-        assert '[[people/Doe John 1950' in content or '[[people/' in content
+        assert "[[people/Doe John 1950" in content or "[[people/" in content
 
 
 class TestLifeSpanFormatting:
@@ -266,7 +270,7 @@ class TestLifeSpanFormatting:
         content = index_path.read_text()
 
         # Death date "15 JUN 2020" should extract year "2020"
-        assert '(1950-2020)' in content
+        assert "(1950-2020)" in content
 
     def test_life_span_with_only_birth(self, temp_dir, output_dir):
         """Test life span with only birth date."""
@@ -282,7 +286,7 @@ class TestLifeSpanFormatting:
 0 TRLR
 """
         temp_file = temp_dir / "living.ged"
-        temp_file.write_text(gedcom_content, encoding='utf-8')
+        temp_file.write_text(gedcom_content, encoding="utf-8")
 
         parser = GedcomParser(temp_file)
         elements = parser.get_individuals()
@@ -293,7 +297,7 @@ class TestLifeSpanFormatting:
         content = index_path.read_text()
 
         # Should show (1990-)
-        assert '(1990-)' in content
+        assert "(1990-)" in content
 
     def test_no_life_span_without_dates(self, temp_dir, output_dir):
         """Test that no life span is shown when dates are missing."""
@@ -307,7 +311,7 @@ class TestLifeSpanFormatting:
 0 TRLR
 """
         temp_file = temp_dir / "no_dates.ged"
-        temp_file.write_text(gedcom_content, encoding='utf-8')
+        temp_file.write_text(gedcom_content, encoding="utf-8")
 
         parser = GedcomParser(temp_file)
         elements = parser.get_individuals()
@@ -318,10 +322,10 @@ class TestLifeSpanFormatting:
         content = index_path.read_text()
 
         # Should not have parentheses for life span
-        lines = [line for line in content.split('\n') if 'Unknown' in line]
+        lines = [line for line in content.split("\n") if "Unknown" in line]
         assert len(lines) > 0
         # Line should end with WikiLink, not life span
-        assert not lines[0].strip().endswith(')')
+        assert not lines[0].strip().endswith(")")
 
     def test_death_year_extraction_from_day_first_format(self, temp_dir, output_dir):
         """Test that death year is correctly extracted when date starts with day."""
@@ -339,7 +343,7 @@ class TestLifeSpanFormatting:
 0 TRLR
 """
         temp_file = temp_dir / "day_first.ged"
-        temp_file.write_text(gedcom_content, encoding='utf-8')
+        temp_file.write_text(gedcom_content, encoding="utf-8")
 
         parser = GedcomParser(temp_file)
         elements = parser.get_individuals()
@@ -350,8 +354,8 @@ class TestLifeSpanFormatting:
         content = index_path.read_text()
 
         # Should show (1950-2020), not (1950-15 J)
-        assert '(1950-2020)' in content
-        assert '15 J' not in content
+        assert "(1950-2020)" in content
+        assert "15 J" not in content
 
 
 class TestIndexStatistics:
@@ -367,7 +371,7 @@ class TestIndexStatistics:
         index_path = generator.generate_index(individuals)
         content = index_path.read_text()
 
-        assert f'Total individuals: {len(individuals)}' in content
+        assert f"Total individuals: {len(individuals)}" in content
 
     def test_empty_index(self, output_dir):
         """Test index generation with no individuals."""
@@ -375,5 +379,5 @@ class TestIndexStatistics:
         index_path = generator.generate_index([])
         content = index_path.read_text()
 
-        assert 'Total individuals: 0' in content
-        assert '# Family Tree Index' in content
+        assert "Total individuals: 0" in content
+        assert "# Family Tree Index" in content

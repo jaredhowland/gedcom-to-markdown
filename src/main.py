@@ -15,14 +15,13 @@ import tempfile
 import zipfile
 import shutil
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Any
 
 from gedcom_parser import GedcomParser
 from individual import Individual
 from markdown_generator import MarkdownGenerator
 from index_generator import IndexGenerator
 from canvas_generator import CanvasGenerator
-from person_selector import select_root_person
 
 
 def setup_logging(verbose: bool = False):
@@ -57,7 +56,7 @@ def setup_logging(verbose: bool = False):
         logging.getLogger(__name__).setLevel(logging.INFO)
 
 
-def extract_gedzip(zip_path: Path, temp_dir: Path) -> Tuple[Path, Optional[Path]]:
+def extract_gedzip(zip_path: Path, temp_dir: Path) -> Tuple[Path, Any]:
     """
     Extracts a ZIP/GEDZIP archive and locates the GEDCOM file and an optional
     media directory.
@@ -100,7 +99,18 @@ def extract_gedzip(zip_path: Path, temp_dir: Path) -> Tuple[Path, Optional[Path]
     # Find media files across the entire extracted tree
     media_dir = None
     media_files = []
-    for ext in ["*.jpg", "*.jpeg", "*.png", "*.gif", "*.bmp", "*.JPG", "*.JPEG", "*.PNG", "*.GIF", "*.BMP"]:
+    for ext in [
+        "*.jpg",
+        "*.jpeg",
+        "*.png",
+        "*.gif",
+        "*.bmp",
+        "*.JPG",
+        "*.JPEG",
+        "*.PNG",
+        "*.GIF",
+        "*.BMP",
+    ]:
         media_files.extend(temp_dir.rglob(ext))
 
     if media_files:
@@ -108,8 +118,12 @@ def extract_gedzip(zip_path: Path, temp_dir: Path) -> Tuple[Path, Optional[Path]
         media_dir = temp_dir
         # Get unique parent directories for logging
         unique_dirs = sorted(set(f.parent for f in media_files))
-        logger.info(f"Found {len(media_files)} media files across {len(unique_dirs)} directories")
-        logger.debug(f"Media directories: {[str(d.relative_to(temp_dir)) for d in unique_dirs]}")
+        logger.info(
+            f"Found {len(media_files)} media files across {len(unique_dirs)} directories"
+        )
+        logger.debug(
+            f"Media directories: {[str(d.relative_to(temp_dir)) for d in unique_dirs]}"
+        )
 
     return gedcom_file, media_dir
 
@@ -187,15 +201,18 @@ def convert_gedcom_to_markdown(
         # Generate canvas if requested
         if create_canvas:
             logger.info("Canvas generation requested")
-            root_person_id = select_root_person(individuals, root_id)
-
-            if root_person_id:
+            # Interactive selector removed in refactor; accept explicit root_id only.
+            if root_id:
+                # Normalize GEDCOM ID if necessary
+                root_person_id = root_id if root_id.startswith("@") else f"@{root_id}@"
                 logger.info(f"Generating canvas with root person: {root_person_id}")
                 canvas_gen = CanvasGenerator(individuals, str(output_dir))
                 canvas_path = canvas_gen.generate_canvas(root_person_id)
                 logger.info(f"Canvas created: {canvas_path}")
             else:
-                logger.warning("No root person selected, skipping canvas generation")
+                logger.warning(
+                    "Interactive person selector removed; skipping canvas generation without explicit root_id"
+                )
 
         # Generate markdown notes
         logger.info(f"Generating markdown notes in: {people_dir}")
@@ -214,14 +231,14 @@ def convert_gedcom_to_markdown(
             logger.info(f"Copying media files to: {media_output_dir}")
 
             # Allowed media extensions (case-insensitive)
-            allowed_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp'}
+            allowed_extensions = {".jpg", ".jpeg", ".png", ".gif", ".bmp"}
 
             copied_count = 0
             skipped_count = 0
             collision_count = 0
 
             # Recursively find all files in media_dir
-            for media_file in media_dir.rglob('*'):
+            for media_file in media_dir.rglob("*"):
                 # Skip directories, only process files
                 if not media_file.is_file():
                     continue
@@ -268,17 +285,18 @@ def convert_gedcom_to_markdown(
             )
 
         # Generate index
+        logger.debug(f"create_index flag value: {create_index!r}")
+        logger.info(f"Effective create_index={create_index!r}")
         if create_index:
             logger.info("Generating index file")
             people_subdir_name = "" if use_flat_structure else "people"
             index_gen = IndexGenerator(
                 output_dir,
                 people_subdir=people_subdir_name,
-                filename_map=generator.filename_map
+                filename_map=generator.filename_map,
             )
             index_path = index_gen.generate_index(individuals)
             logger.info(f"Created index file: {index_path}")
-
         logger.info("Conversion completed successfully")
         return 0
 
@@ -291,6 +309,39 @@ def convert_gedcom_to_markdown(
     except Exception:
         logger.exception("Unexpected error")
         return 1
+
+    finally:
+        # Ensure that when create_index is False, no Index.md remains in the
+        # output directory subtree. This also acts as a safeguard against any
+        # code path that may have created an index despite the caller's flag.
+        try:
+            if not create_index:
+                for idx in Path(output_dir).rglob("*"):
+                    try:
+                        if idx.is_file() and idx.name.lower() == "index.md":
+                            logger.debug(f"(Cleanup) Removing stray Index.md: {idx}")
+                            idx.unlink()
+                    except Exception:
+                        logger.exception(
+                            f"(Cleanup) Failed to remove stray Index.md: {idx}"
+                        )
+        except Exception:
+            logger.exception("(Cleanup) Failed to scan for stray Index.md files")
+        # Log any remaining index files for debugging
+        try:
+            remaining = [
+                str(p)
+                for p in Path(output_dir).rglob("*")
+                if p.is_file() and p.name.lower() == "index.md"
+            ]
+            if remaining:
+                logger.info(
+                    f"(Cleanup) Remaining index files after cleanup: {remaining}"
+                )
+            else:
+                logger.info("(Cleanup) No index files remain after cleanup")
+        except Exception:
+            logger.exception("(Cleanup) Failed to list remaining index files")
 
 
 def main():

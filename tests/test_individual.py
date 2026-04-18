@@ -17,7 +17,6 @@ from gedcom_parser import GedcomParser
 from individual import Individual
 
 
-
 class TestIndividualBasicInfo:
     """Tests for basic individual information extraction."""
 
@@ -26,31 +25,31 @@ class TestIndividualBasicInfo:
         """Get the John Doe individual from sample GEDCOM."""
         parser = GedcomParser(sample_gedcom_file)
         individuals = parser.get_individuals()
-        john = [ind for ind in individuals if 'John' in str(ind.get_name())]
+        john = [ind for ind in individuals if "John" in str(ind.get_name())]
         return Individual(john[0], parser.parser)
 
     def test_get_id(self, john_doe):
         """Test ID extraction without @ symbols."""
         id_value = john_doe.get_id()
-        assert id_value == 'I1'
-        assert '@' not in id_value
+        assert id_value == "I1"
+        assert "@" not in id_value
 
     def test_get_names(self, john_doe):
         """Test name extraction as tuple."""
         first, last = john_doe.get_names()
-        assert first == 'John'
-        assert last == 'Doe'
+        assert first == "John"
+        assert last == "Doe"
 
     def test_get_full_name(self, john_doe):
         """Test full name formatting."""
         full_name = john_doe.get_full_name()
-        assert full_name == 'John Doe'
+        assert full_name == "John Doe"
 
     def test_get_file_name_with_birth_year(self, john_doe):
         """Test filename generation with birth year."""
         filename = john_doe.get_file_name()
-        assert 'Doe John' in filename
-        assert '1950' in filename
+        assert "Doe John" in filename
+        assert "1950" in filename
 
     def test_get_file_name_without_birth_year(self, sample_gedcom_file):
         """Test filename generation without birth year."""
@@ -66,29 +65,29 @@ class TestIndividualBasicInfo:
 0 TRLR
 """
         temp_file = sample_gedcom_file.parent / "no_year.ged"
-        temp_file.write_text(gedcom_content, encoding='utf-8')
+        temp_file.write_text(gedcom_content, encoding="utf-8")
 
         parser = GedcomParser(temp_file)
         individuals = parser.get_individuals()
         person = Individual(individuals[0], parser.parser)
 
         filename = person.get_file_name()
-        assert 'Person NoYear' in filename  # Preserves original GEDCOM capitalization
+        assert "Person NoYear" in filename  # Preserves original GEDCOM capitalization
         # Should not contain a year
         assert not any(char.isdigit() for char in filename)
 
     def test_get_gender(self, john_doe):
         """Test gender extraction."""
-        assert john_doe.get_gender() == 'M'
+        assert john_doe.get_gender() == "M"
 
     def test_get_fs_id(self, john_doe, sample_gedcom_file):
         """Test FamilySearch Tree ID extraction from _FSFTID tag."""
-        assert john_doe.get_fs_id() == 'G123-ABC'
+        assert john_doe.get_fs_id() == "G123-ABC"
         parser = GedcomParser(sample_gedcom_file)
         individuals = parser.get_individuals()
-        jane = [ind for ind in individuals if 'Jane' in str(ind.get_name())]
+        jane = [ind for ind in individuals if "Jane" in str(ind.get_name())]
         jane_doe = Individual(jane[0], parser.parser)
-        assert jane_doe.get_fs_id() == ''
+        assert jane_doe.get_fs_id() == ""
 
     def test_get_gender_default_unknown(self, sample_gedcom_file):
         """Test that missing gender defaults to 'U'."""
@@ -102,14 +101,13 @@ class TestIndividualBasicInfo:
 0 TRLR
 """
         temp_file = sample_gedcom_file.parent / "no_gender.ged"
-        temp_file.write_text(gedcom_content, encoding='utf-8')
+        temp_file.write_text(gedcom_content, encoding="utf-8")
 
         parser = GedcomParser(temp_file)
         individuals = parser.get_individuals()
         person = Individual(individuals[0], parser.parser)
 
-        assert person.get_gender() == 'U'
-
+        assert person.get_gender() == "U"
 
 
 class TestBirthAndDeath:
@@ -159,7 +157,6 @@ class TestBirthAndDeath:
         assert birth["date"] == ""
         assert birth["place"] == ""
         assert birth["year"] == ""
-
 
 
 class TestEvents:
@@ -218,7 +215,7 @@ class TestEvents:
         person = Individual(individuals[0], parser.parser)
 
         events = person.get_events()
-        event_types = [e['type'] for e in events]
+        event_types = [e["type"] for e in events]
 
         assert "BIRT" in event_types
         assert "DEAT" in event_types
@@ -228,9 +225,9 @@ class TestEvents:
         assert "BURI" in event_types
 
         resi = next(e for e in events if e["type"] == "RESI")
-        assert resi['place'] == 'New York'
-        assert resi['lat'] == ''
-        assert resi['long'] == ''
+        assert resi["place"] == "New York"
+        assert resi["lat"] == ""
+        assert resi["long"] == ""
 
         assert "EDUC" in event_types
         assert "RESI" in event_types
@@ -356,7 +353,6 @@ class TestEvents:
         assert resi["long"] == "2.3522"
 
 
-
 class TestFamilyRelationships:
     """Tests for family relationship extraction."""
 
@@ -478,7 +474,6 @@ class TestFamilyRelationships:
         assert family_two["marriage_long"] == ""
 
 
-
 class TestImagesAndMedia:
     """Tests for image and media extraction."""
 
@@ -486,16 +481,16 @@ class TestImagesAndMedia:
         """Test image extraction."""
         parser = GedcomParser(sample_gedcom_file)
         individuals = parser.get_individuals()
-        john = [ind for ind in individuals if 'John' in str(ind.get_name())]
+        john = [ind for ind in individuals if "John" in str(ind.get_name())]
         john_obj = Individual(john[0], parser.parser)
 
         images = john_obj.get_images()
         assert len(images) >= 1
 
         image = images[0]
-        assert image['file'] == 'john_photo.jpg'
-        assert image['title'] == 'Photo of John'
-        assert image['format'] == 'jpeg'
+        assert image["file"] == "john_photo.jpg"
+        assert image["title"] == "Photo of John"
+        assert image["format"] == "jpeg"
 
     def test_get_notes_inline(self, temp_dir):
         """Test inline note extraction."""
@@ -511,7 +506,7 @@ class TestImagesAndMedia:
 0 TRLR
 """
         temp_file = temp_dir / "inline_notes.ged"
-        temp_file.write_text(gedcom_content, encoding='utf-8')
+        temp_file.write_text(gedcom_content, encoding="utf-8")
 
         parser = GedcomParser(temp_file)
         individuals = parser.get_individuals()
@@ -519,8 +514,8 @@ class TestImagesAndMedia:
 
         notes = person.get_notes()
         assert len(notes) >= 1
-        assert 'inline note' in notes[0].lower()
-        assert 'multiple lines' in notes[0].lower()
+        assert "inline note" in notes[0].lower()
+        assert "multiple lines" in notes[0].lower()
 
     def test_get_notes_empty(self, temp_dir):
         """Test note extraction when no notes are present."""
@@ -534,7 +529,7 @@ class TestImagesAndMedia:
 0 TRLR
 """
         temp_file = temp_dir / "no_notes.ged"
-        temp_file.write_text(gedcom_content, encoding='utf-8')
+        temp_file.write_text(gedcom_content, encoding="utf-8")
 
         parser = GedcomParser(temp_file)
         individuals = parser.get_individuals()
@@ -542,7 +537,6 @@ class TestImagesAndMedia:
 
         notes = person.get_notes()
         assert len(notes) == 0
-
 
 
 class TestNotes:
@@ -552,13 +546,13 @@ class TestNotes:
         """Test note extraction via reference."""
         parser = GedcomParser(sample_gedcom_file)
         individuals = parser.get_individuals()
-        john = [ind for ind in individuals if 'John' in str(ind.get_name())]
+        john = [ind for ind in individuals if "John" in str(ind.get_name())]
         john_obj = Individual(john[0], parser.parser)
 
         notes = john_obj.get_notes()
         assert len(notes) >= 1
-        assert 'test note' in notes[0].lower()
-        assert 'great engineer' in notes[0].lower()
+        assert "test note" in notes[0].lower()
+        assert "great engineer" in notes[0].lower()
 
     def test_get_notes_inline(self, temp_dir):
         """Test inline note extraction."""
@@ -574,7 +568,7 @@ class TestNotes:
 0 TRLR
 """
         temp_file = temp_dir / "inline_notes.ged"
-        temp_file.write_text(gedcom_content, encoding='utf-8')
+        temp_file.write_text(gedcom_content, encoding="utf-8")
 
         parser = GedcomParser(temp_file)
         individuals = parser.get_individuals()
@@ -582,8 +576,8 @@ class TestNotes:
 
         notes = person.get_notes()
         assert len(notes) >= 1
-        assert 'inline note' in notes[0].lower()
-        assert 'multiple lines' in notes[0].lower()
+        assert "inline note" in notes[0].lower()
+        assert "multiple lines" in notes[0].lower()
 
     def test_get_notes_empty(self, temp_dir):
         """Test note extraction when no notes are present."""
@@ -597,7 +591,7 @@ class TestNotes:
 0 TRLR
 """
         temp_file = temp_dir / "no_notes.ged"
-        temp_file.write_text(gedcom_content, encoding='utf-8')
+        temp_file.write_text(gedcom_content, encoding="utf-8")
 
         parser = GedcomParser(temp_file)
         individuals = parser.get_individuals()
@@ -607,14 +601,13 @@ class TestNotes:
         assert len(notes) == 0
 
 
-
 class TestStories:
     """Tests for custom story tag extraction."""
 
     def test_get_stories(self, temp_dir, sample_gedcom_with_stories):
         """Test story extraction from custom _STO tags."""
         temp_file = temp_dir / "stories.ged"
-        temp_file.write_text(sample_gedcom_with_stories, encoding='utf-8')
+        temp_file.write_text(sample_gedcom_with_stories, encoding="utf-8")
 
         parser = GedcomParser(temp_file)
         individuals = parser.get_individuals()
@@ -649,23 +642,22 @@ class TestStories:
         assert len(stories) == 0
 
 
-
 class TestAttributes:
     """Tests for physical attribute extraction."""
 
     def test_get_attributes(self, temp_dir, sample_gedcom_with_attributes):
         """Test physical attribute extraction."""
         temp_file = temp_dir / "attributes.ged"
-        temp_file.write_text(sample_gedcom_with_attributes, encoding='utf-8')
+        temp_file.write_text(sample_gedcom_with_attributes, encoding="utf-8")
 
         parser = GedcomParser(temp_file)
         individuals = parser.get_individuals()
         person = Individual(individuals[0], parser.parser)
 
         attrs = person.get_attributes()
-        assert attrs['eyes'] == 'Blue'
-        assert attrs['hair'] == 'Blonde'
-        assert attrs['heig'] == '170 cm'
+        assert attrs["eyes"] == "Blue"
+        assert attrs["hair"] == "Blonde"
+        assert attrs["heig"] == "170 cm"
 
     def test_get_attributes_empty(self, temp_dir):
         """Test attribute extraction when no attributes are present."""
@@ -679,7 +671,7 @@ class TestAttributes:
 0 TRLR
 """
         temp_file = temp_dir / "no_attrs.ged"
-        temp_file.write_text(gedcom_content, encoding='utf-8')
+        temp_file.write_text(gedcom_content, encoding="utf-8")
 
         parser = GedcomParser(temp_file)
         individuals = parser.get_individuals()
