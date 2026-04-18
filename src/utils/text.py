@@ -11,11 +11,11 @@ These implementations intentionally mirror the existing logic in MarkdownGenerat
 so behavior is unchanged during migration.
 """
 
-from typing import List
+from typing import List, Optional
 import re
 
 
-def collapse_single_line(text: str) -> str:
+def collapse_single_line(text: Optional[str]) -> str:
     """Normalize whitespace on a single logical line.
 
     Collapse runs of whitespace into single spaces and trim leading/trailing whitespace.

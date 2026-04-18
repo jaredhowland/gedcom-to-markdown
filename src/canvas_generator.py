@@ -11,7 +11,7 @@ import json
 import logging
 import os
 import uuid
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional, Any
 from collections import deque
 from individual import Individual
 from canvas_layout import calculate_family_height, get_siblings, calculate_subtree_widths
@@ -27,12 +27,14 @@ class CanvasGenerator:
     NODE_WIDTH = 250
     NODE_BASE_HEIGHT = 60  # Base height for nodes without images
     GENERATION_SPACING = 680  # Horizontal spacing between generations (left-to-right)
+    HORIZONTAL_SPACING = 20  # Horizontal spacing between nodes
+    VERTICAL_SPACING = 200  # Vertical spacing between generations
     SIBLING_SPACING = 305  # Vertical spacing between siblings when stacked
     COUPLE_SPACING = 190  # Vertical spacing between spouses when stacked
     IMAGE_HEIGHT = 350  # Height for nodes with images (increased to show image + name)
     TREE_SPACING = 400  # Space between disconnected trees
 
-    def __init__(self, individuals: List[Individual], output_dir: str):
+    def __init__(self, individuals: List[Any], output_dir: str):
         """
         Initialize the canvas generator.
 
@@ -44,7 +46,7 @@ class CanvasGenerator:
         self.output_dir = output_dir
 
         # Create lookup dictionary for fast access
-        self.individual_map: Dict[str, Individual] = {
+        self.individual_map: Dict[str, Any] = {
             ind.get_pointer(): ind for ind in individuals
         }
 
@@ -231,7 +233,7 @@ class CanvasGenerator:
             spouse_id = spouses[0]
             if spouse_id in tree_structure:
                 spouse_y = self.IMAGE_HEIGHT + self.COUPLE_SPACING
-                positions[spouse_id] = (0, spouse_y)
+                positions[spouse_id] = (0, int(spouse_y))
                 processed.add(spouse_id)
 
                 # Determine spouse direction based on gender
@@ -243,7 +245,7 @@ class CanvasGenerator:
                 self._position_spouse_siblings(
                     spouse_id,
                     0,
-                    spouse_y,
+                                int(spouse_y),
                     tree_structure,
                     positions,
                     processed,
@@ -280,7 +282,7 @@ class CanvasGenerator:
             max_x = max(x for x, y in positions.values()) if positions else 0
             current_y = 0
             for person_id in unprocessed:
-                positions[person_id] = (max_x + self.TREE_SPACING, current_y)
+                positions[person_id] = (int(max_x + self.TREE_SPACING), int(current_y))
                 current_y += self.IMAGE_HEIGHT + self.SIBLING_SPACING
                 processed.add(person_id)
 
@@ -348,7 +350,7 @@ class CanvasGenerator:
             if child_id in processed or child_id not in tree_structure:
                 continue
 
-            positions[child_id] = (child_x, current_y)
+            positions[child_id] = (int(child_x), int(current_y))
             processed.add(child_id)
 
             # Position child's spouse below them
@@ -358,7 +360,7 @@ class CanvasGenerator:
                 spouse_id = child_spouses[0]
                 if spouse_id in tree_structure and spouse_id not in processed:
                     spouse_y = current_y + self.IMAGE_HEIGHT + self.COUPLE_SPACING
-                    positions[spouse_id] = (child_x, spouse_y)
+                    positions[spouse_id] = (int(child_x), int(spouse_y))
                     processed.add(spouse_id)
 
                     # Determine spouse direction based on gender
@@ -370,7 +372,7 @@ class CanvasGenerator:
                     self._position_spouse_siblings(
                         spouse_id,
                         child_x,
-                        spouse_y,
+                                int(spouse_y),
                         tree_structure,
                         positions,
                         processed,
@@ -404,8 +406,8 @@ class CanvasGenerator:
         positions: Dict[str, Tuple[int, int]],
         processed: set,
         direction: str = "down",
-        min_y_at_x: Dict[int, float] = None,
-    ):
+        min_y_at_x: Optional[Dict[Tuple[int, str], float]] = None,
+    ): 
         """
         Layout ancestors to the right of root person with vertical sibling stacking.
 
@@ -461,7 +463,7 @@ class CanvasGenerator:
                 )
 
             if father_id in tree_structure and father_id not in processed:
-                positions[father_id] = (parent_x, parent_y)
+                positions[father_id] = (int(parent_x), int(parent_y))
                 processed.add(father_id)
                 father_name = tree_structure[father_id]["individual"].get_names()
                 logger.info(
@@ -501,7 +503,7 @@ class CanvasGenerator:
                                 f"Adjusted mother position to avoid overlap: y={mother_y}"
                             )
 
-                positions[mother_id] = (parent_x, mother_y)
+                positions[mother_id] = (int(parent_x), int(mother_y))
                 processed.add(mother_id)
 
                 # Update min_y_at_x to include the mother's position
@@ -534,7 +536,7 @@ class CanvasGenerator:
             father_siblings = self._get_siblings(father_id, tree_structure)
             for sibling_id in father_siblings:
                 if sibling_id in tree_structure and sibling_id not in processed:
-                    positions[sibling_id] = (parent_x, current_sibling_y)
+                    positions[sibling_id] = (int(parent_x), int(current_sibling_y))
                     processed.add(sibling_id)
                     sibling_name = tree_structure[sibling_id]["individual"].get_names()
                     logger.info(
@@ -559,13 +561,13 @@ class CanvasGenerator:
                                     + self.IMAGE_HEIGHT
                                     + self.COUPLE_SPACING
                                 )
-                            positions[spouse_id] = (parent_x, spouse_y)
+                            positions[spouse_id] = (int(parent_x), int(spouse_y))
                             processed.add(spouse_id)
                             # Position spouse's siblings and their families
                             self._position_spouse_siblings(
                                 spouse_id,
                                 parent_x,
-                                spouse_y,
+                                int(spouse_y),
                                 tree_structure,
                                 positions,
                                 processed,
@@ -615,7 +617,7 @@ class CanvasGenerator:
                     and sibling_id in tree_structure
                     and sibling_id not in processed
                 ):
-                    positions[sibling_id] = (parent_x, current_sibling_y)
+                    positions[sibling_id] = (int(parent_x), int(current_sibling_y))
                     processed.add(sibling_id)
 
                     # Position sibling's spouse
@@ -636,13 +638,13 @@ class CanvasGenerator:
                                     + self.IMAGE_HEIGHT
                                     + self.COUPLE_SPACING
                                 )
-                            positions[spouse_id] = (parent_x, spouse_y)
+                            positions[spouse_id] = (int(parent_x), int(spouse_y))
                             processed.add(spouse_id)
                             # Position spouse's siblings and their families
                             self._position_spouse_siblings(
                                 spouse_id,
                                 parent_x,
-                                spouse_y,
+                                int(spouse_y),
                                 tree_structure,
                                 positions,
                                 processed,
@@ -744,7 +746,7 @@ class CanvasGenerator:
                 logger.info(
                     f"Single parent case: positioning {parent_name} at ({parent_x}, {parent_y})"
                 )
-                positions[parent_id] = (parent_x, parent_y)
+                positions[parent_id] = (int(parent_x), int(parent_y))
                 processed.add(parent_id)
 
                 # Update min_y_at_x to include this parent's position
@@ -859,7 +861,7 @@ class CanvasGenerator:
                         partner_y = spouse_y - self.IMAGE_HEIGHT - self.COUPLE_SPACING
                     else:
                         partner_y = spouse_y + self.IMAGE_HEIGHT + self.COUPLE_SPACING
-                    positions[partner_id] = (spouse_x, partner_y)
+                    positions[partner_id] = (int(spouse_x), int(partner_y))
                     processed.add(partner_id)
 
                     if direction == "up":
@@ -871,7 +873,7 @@ class CanvasGenerator:
                     partner_siblings = self._get_siblings(partner_id, tree_structure)
                     for sib_id in partner_siblings:
                         if sib_id in tree_structure and sib_id not in processed:
-                            positions[sib_id] = (spouse_x, current_y)
+                            positions[sib_id] = (int(spouse_x), int(current_y))
                             processed.add(sib_id)
 
                             # Position this in-law sibling's spouse
@@ -894,7 +896,7 @@ class CanvasGenerator:
                                         + self.IMAGE_HEIGHT
                                         + self.COUPLE_SPACING
                                     )
-                                positions[sib_spouses[0]] = (spouse_x, sib_spouse_y)
+                                positions[sib_spouses[0]] = (int(spouse_x), int(sib_spouse_y))
                                 processed.add(sib_spouses[0])
 
                                 if direction == "up":
@@ -929,7 +931,7 @@ class CanvasGenerator:
 
         for sibling_id in spouse_siblings:
             if sibling_id in tree_structure and sibling_id not in processed:
-                positions[sibling_id] = (spouse_x, current_y)
+                positions[sibling_id] = (int(spouse_x), int(current_y))
                 processed.add(sibling_id)
 
                 # Position this sibling's spouse
@@ -949,7 +951,7 @@ class CanvasGenerator:
                             sibling_spouse_y = (
                                 current_y + self.IMAGE_HEIGHT + self.COUPLE_SPACING
                             )
-                        positions[sibling_spouse_id] = (spouse_x, sibling_spouse_y)
+                        positions[sibling_spouse_id] = (int(spouse_x), int(sibling_spouse_y))
                         processed.add(sibling_spouse_id)
 
                         if direction == "up":
@@ -1110,7 +1112,7 @@ class CanvasGenerator:
 
                     # Position father
                     if father_id in tree_structure and father_id not in processed:
-                        positions[father_id] = (couple_start_x, parent_y)
+                        positions[father_id] = (int(couple_start_x), int(parent_y))
                         processed.add(father_id)
 
                     # Position mother next to father
@@ -1118,14 +1120,14 @@ class CanvasGenerator:
                         couple_start_x + self.NODE_WIDTH + self.HORIZONTAL_SPACING
                     )
                     if mother_id in tree_structure and mother_id not in processed:
-                        positions[mother_id] = (mother_x, parent_y)
+                        positions[mother_id] = (int(mother_x), int(parent_y))
                         processed.add(mother_id)
 
                 elif len(parents) == 1:
                     # Single parent: center above child
                     parent_id = parents[0]
                     if parent_id in tree_structure and parent_id not in processed:
-                        positions[parent_id] = (child_x, parent_y)
+                        positions[parent_id] = (int(child_x), int(parent_y))
                         processed.add(parent_id)
 
     def _layout_person_and_descendants(
@@ -1177,13 +1179,13 @@ class CanvasGenerator:
         people_start_x = x_offset + (total_width - people_width) // 2
 
         # Position this person
-        positions[person_id] = (people_start_x, y_pos)
+        positions[person_id] = (int(people_start_x), int(y_pos))
 
         # Position spouse(s) to the right
         current_x = people_start_x + self.NODE_WIDTH + self.HORIZONTAL_SPACING
         for spouse_id in spouses:
             if spouse_id not in processed and spouse_id in tree_structure:
-                positions[spouse_id] = (current_x, y_pos)
+                positions[spouse_id] = (int(current_x), int(y_pos))
                 processed.add(spouse_id)
                 current_x += self.NODE_WIDTH + self.HORIZONTAL_SPACING
 

@@ -15,7 +15,7 @@ import tempfile
 import zipfile
 import shutil
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Any
 
 from gedcom_parser import GedcomParser
 from individual import Individual
@@ -56,7 +56,7 @@ def setup_logging(verbose: bool = False):
         logging.getLogger(__name__).setLevel(logging.INFO)
 
 
-def extract_gedzip(zip_path: Path, temp_dir: Path) -> Tuple[Path, Optional[Path]]:
+def extract_gedzip(zip_path: Path, temp_dir: Path) -> Tuple[Path, Any]:
     """
     Extracts a ZIP/GEDZIP archive and locates the GEDCOM file and an optional
     media directory.

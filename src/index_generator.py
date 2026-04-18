@@ -6,7 +6,7 @@ family tree.
 """
 
 from pathlib import Path
-from typing import List, Any
+from typing import List, Any, Optional
 import logging
 import re
 
@@ -30,7 +30,7 @@ class IndexGenerator:
         self,
         output_dir: Path,
         people_subdir: str = "",
-        filename_map: dict = None,
+        filename_map: Optional[dict] = None,
         filename_registry: FilenameRegistry | None = None,
     ):
         """

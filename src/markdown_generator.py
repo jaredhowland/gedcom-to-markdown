@@ -6,7 +6,7 @@ in the family tree.
 """
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Any
 import logging
 import re
 
@@ -90,7 +90,7 @@ class MarkdownGenerator:
         self.filename_map[individual_id] = unique_name
         return unique_name
 
-    def generate_note(self, individual: Individual) -> Path:
+    def generate_note(self, individual: Any) -> Path:
         """
         Create a markdown file for the given individual containing YAML frontmatter, header, events, families, parents, children, images, and notes sections.
 
@@ -135,7 +135,7 @@ class MarkdownGenerator:
 
         return file_path
 
-    def _write_frontmatter(self, f, individual: Individual):
+    def _write_frontmatter(self, f, individual: Any):
         """
         Write YAML frontmatter containing individual attributes.
 
