@@ -82,6 +82,8 @@ def convert_gedcom_to_markdown(
 
     # Use GedcomParser and MarkdownGenerator for robust note generation
     try:
+        # Prefer the centralized parser_io helper for file-level IO
+        from parser_io import parse_from_path
         from gedcom_parser import GedcomParser
         from markdown_generator import MarkdownGenerator
         from index_generator import IndexGenerator
@@ -93,7 +95,7 @@ def convert_gedcom_to_markdown(
         return 1
 
     try:
-        parser = GedcomParser(gedcom_path)
+        parser = parse_from_path(gedcom_path)
     except Exception:
         logging.getLogger(__name__).exception("Failed to initialize GedcomParser")
         return 1

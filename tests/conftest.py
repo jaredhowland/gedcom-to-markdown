@@ -6,19 +6,14 @@ that can be used across all test modules.
 """
 
 import pytest
-import tempfile
-import shutil
 from pathlib import Path
 
 
 @pytest.fixture
-def temp_dir():
-    """Create a temporary directory that is cleaned up after the test."""
-    tmp = Path(tempfile.mkdtemp())
-    yield tmp
-    # On Windows, files may still be locked by the process
-    # Use ignore_errors to prevent test failures during cleanup
-    shutil.rmtree(tmp, ignore_errors=True)
+def temp_dir(tmp_path):
+    """Provide a temporary directory for tests (pytest tmp_path fixture)."""
+    # Use built-in tmp_path to avoid manual cleanup and race conditions
+    return tmp_path
 
 
 @pytest.fixture

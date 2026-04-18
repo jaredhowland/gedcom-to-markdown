@@ -12,7 +12,7 @@ import re
 
 # Avoid importing `individual` at module import time to keep this module test-friendly
 # and to prevent hard dependency on python-gedcom during isolated unit tests.
-from utils.filenames import FilenameRegistry
+from filename_mapper import FilenameRegistry  # canonical filename utility
 from utils import sort as sort_utils
 
 

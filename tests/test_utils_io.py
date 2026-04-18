@@ -1,6 +1,5 @@
 import zipfile
 from pathlib import Path
-import tempfile
 
 from utils.io import normalize_line_endings, extract_gedzip
 
