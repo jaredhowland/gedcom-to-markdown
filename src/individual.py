@@ -81,28 +81,29 @@ def resolve_gedcom_text(parser, value: str, element=None) -> str:
         if not target:
             return ""
         text = target.get_value() or ""
-        # Respect CONT vs CONC semantics: CONT => newline, CONC => concatenate
+        # Respect CONT vs CONC semantics: CONT => newline, CONC => concatenate.
+        # An empty CONT line represents a blank line in GEDCOM and must still
+        # contribute a newline so paragraph breaks are preserved.
         for sub in target.get_child_elements():
             tag = sub.get_tag()
             val = (sub.get_value() or "")
-            if not val:
-                continue
             if tag == "CONC":
-                text += val
+                if val:
+                    text += val
             elif tag == "CONT":
                 text += "\n" + val
         return text
 
-    # Inline text with possible CONT/CONC children
+    # Inline text with possible CONT/CONC children.
+    # Same rule: empty CONC is a no-op, but empty CONT preserves a blank line.
     text = value or ""
     if element is not None:
         for sub in element.get_child_elements():
             tag = sub.get_tag()
             val = (sub.get_value() or "")
-            if not val:
-                continue
             if tag == "CONC":
-                text += val
+                if val:
+                    text += val
             elif tag == "CONT":
                 text += "\n" + val
     return text

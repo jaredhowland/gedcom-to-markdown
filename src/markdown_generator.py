@@ -136,6 +136,8 @@ class MarkdownGenerator:
                     self._generate_sources_index(parser)
                 except Exception:
                     logger.exception('Failed to generate sources index')
+                    # Prevent repeated expensive retries on persistent failures (e.g., IO/permissions)
+                    self._sources_index_generated = True
 
         return file_path
 
@@ -526,14 +528,16 @@ class MarkdownGenerator:
 
         If title and publ are present, title is rendered as a link to publ.
         If only title present, render plain title. If only publ present, use the URL as link text.
+        Title text is escaped to prevent markdown emphasis characters from triggering formatting.
         """
         title = self._collapse_single_line(title)
         publ = self._collapse_single_line(publ)
+        escaped_title = self._escape_markdown(title)
 
         if title and publ:
-            return f"[{title}]({publ})"
+            return f"[{escaped_title}]({publ})"
         if title:
-            return title
+            return escaped_title
         if publ:
             return f"[{publ}]({publ})"
         return "(Unknown source)"
@@ -602,18 +606,13 @@ class MarkdownGenerator:
         else:
             sources_dir = self.output_dir / "sources"
 
-        written_any = False
         i = 0
-
-        # Prepare the directory but delay creating the file until we have at least
-        # one source entry to write. We'll open the file and stream entries as we
-        # find them.
-        sources_dir.mkdir(parents=True, exist_ok=True)
         index_file = sources_dir / "Index.md"
 
-        with open(index_file, "w", encoding="utf-8") as f:
-            f.write("# Sources Index\n\n")
-
+        # Delay creating the file and directory until the first source is found so
+        # that no empty Index.md is left behind when there are no SOUR records.
+        f = None
+        try:
             for elem in elem_dict.values():
                 try:
                     if elem.get_tag() != "SOUR":
@@ -642,6 +641,11 @@ class MarkdownGenerator:
                 note_text = self._collapse_preserve_lines(note_text)
 
                 if title or publ or note_text:
+                    if f is None:
+                        # First source found: create directory and open file
+                        sources_dir.mkdir(parents=True, exist_ok=True)
+                        f = open(index_file, "w", encoding="utf-8")
+                        f.write("# Sources Index\n\n")
                     i += 1
                     entry = self._format_source_entry(title, publ)
                     f.write(f"{i}. {entry}\n")
@@ -650,16 +654,12 @@ class MarkdownGenerator:
                         note_text = self._repair_broken_html_tags(note_text)
                         lines = [self._escape_markdown(ln) for ln in note_text.splitlines()]
                         self._write_multiline_note_block(f, lines, nested=True)
-                    written_any = True
 
-            f.write("\n")
-
-        # If nothing was actually written, remove the empty index file
-        if not written_any and index_file.exists():
-            try:
-                index_file.unlink()
-            except Exception:
-                pass
+            if f is not None:
+                f.write("\n")
+        finally:
+            if f is not None:
+                f.close()
 
         # Mark that the global sources index has been generated so we don't do this again
         self._sources_index_generated = True
@@ -753,8 +753,11 @@ class MarkdownGenerator:
 
         total = len(lines)
         if nested:
-            indent = "   "
-            cont_indent = "     "
+            # Use 4-space indent so nested content is correctly parsed as continuation
+            # of the parent ordered list item even for multi-digit list numbers (e.g. "10.")
+            # in CommonMark-compliant renderers.
+            indent = "    "
+            cont_indent = "      "
             # First line as a nested bullet; add two spaces if there are continuation lines
             if total > 1:
                 f.write(f"{indent}- {lines[0]}  \n")
