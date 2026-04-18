@@ -8,10 +8,17 @@ CanvasGenerator.
 Do not change behavior in these helpers; they simply provide the logic in a
 module that can be unit-tested independently and imported by CanvasGenerator.
 """
+
 from typing import Dict, List, Set
 
 
-def calculate_family_height(tree_structure: Dict[str, Dict], person_id: str, image_height: int, couple_spacing: int, visited: Set[str] | None = None) -> int:
+def calculate_family_height(
+    tree_structure: Dict[str, Dict],
+    person_id: str,
+    image_height: int,
+    couple_spacing: int,
+    visited: Set[str] | None = None,
+) -> int:
     """
     Calculate total vertical height needed for a person and their spouse.
 
@@ -26,7 +33,7 @@ def calculate_family_height(tree_structure: Dict[str, Dict], person_id: str, ima
     visited.add(person_id)
 
     data = tree_structure[person_id]
-    spouses = data.get('spouses', [])
+    spouses = data.get("spouses", [])
 
     # Height for person
     height = image_height
@@ -48,7 +55,7 @@ def get_siblings(tree_structure: Dict[str, Dict], person_id: str) -> List[str]:
         return []
 
     person_data = tree_structure[person_id]
-    parents = person_data.get('parents', [])
+    parents = person_data.get("parents", [])
 
     if not parents:
         return []
@@ -57,7 +64,7 @@ def get_siblings(tree_structure: Dict[str, Dict], person_id: str) -> List[str]:
     for parent_id in parents:
         if parent_id in tree_structure:
             parent_data = tree_structure[parent_id]
-            parent_children = parent_data.get('children', [])
+            parent_children = parent_data.get("children", [])
             for child_id in parent_children:
                 if child_id != person_id and child_id not in siblings:
                     siblings.append(child_id)
@@ -65,7 +72,13 @@ def get_siblings(tree_structure: Dict[str, Dict], person_id: str) -> List[str]:
     return siblings
 
 
-def calculate_subtree_widths(tree_structure: Dict[str, Dict], person_id: str, visited: set, node_width: int, horizontal_spacing: int) -> Dict[str, int]:
+def calculate_subtree_widths(
+    tree_structure: Dict[str, Dict],
+    person_id: str,
+    visited: set,
+    node_width: int,
+    horizontal_spacing: int,
+) -> Dict[str, int]:
     """
     Calculate the width needed for each person's subtree (descendants).
 

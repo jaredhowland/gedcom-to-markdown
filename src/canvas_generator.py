@@ -245,7 +245,7 @@ class CanvasGenerator:
                 self._position_spouse_siblings(
                     spouse_id,
                     0,
-                                int(spouse_y),
+                    int(spouse_y),
                     tree_structure,
                     positions,
                     processed,
@@ -372,7 +372,7 @@ class CanvasGenerator:
                     self._position_spouse_siblings(
                         spouse_id,
                         child_x,
-                                int(spouse_y),
+                        int(spouse_y),
                         tree_structure,
                         positions,
                         processed,
@@ -407,7 +407,7 @@ class CanvasGenerator:
         processed: set,
         direction: str = "down",
         min_y_at_x: Optional[Dict[Tuple[int, str], float]] = None,
-    ): 
+    ):
         """
         Layout ancestors to the right of root person with vertical sibling stacking.
 
@@ -896,7 +896,10 @@ class CanvasGenerator:
                                         + self.IMAGE_HEIGHT
                                         + self.COUPLE_SPACING
                                     )
-                                positions[sib_spouses[0]] = (int(spouse_x), int(sib_spouse_y))
+                                positions[sib_spouses[0]] = (
+                                    int(spouse_x),
+                                    int(sib_spouse_y),
+                                )
                                 processed.add(sib_spouses[0])
 
                                 if direction == "up":
@@ -951,7 +954,10 @@ class CanvasGenerator:
                             sibling_spouse_y = (
                                 current_y + self.IMAGE_HEIGHT + self.COUPLE_SPACING
                             )
-                        positions[sibling_spouse_id] = (int(spouse_x), int(sibling_spouse_y))
+                        positions[sibling_spouse_id] = (
+                            int(spouse_x),
+                            int(sibling_spouse_y),
+                        )
                         processed.add(sibling_spouse_id)
 
                         if direction == "up":

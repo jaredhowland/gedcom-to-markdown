@@ -3,7 +3,10 @@ from utils.filenames import make_person_filename, FilenameRegistry
 
 def test_make_person_filename_basic():
     assert make_person_filename("John", "Doe", "1980") == "Doe John 1980"
-    assert make_person_filename("Mary-Anne", "O'Connor", "1975") == "O'Connor Mary-Anne 1975"
+    assert (
+        make_person_filename("Mary-Anne", "O'Connor", "1975")
+        == "O'Connor Mary-Anne 1975"
+    )
 
 
 def test_registry_unique_names(tmp_path):
