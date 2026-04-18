@@ -129,6 +129,7 @@ class TestMetadataFormatting:
 
         # Check for YAML frontmatter metadata
         assert 'ID: I1' in content
+        assert 'FamilySearch ID: G123-ABC' in content
         assert 'Name: John Doe' in content
         assert 'Sex: M' in content
 
@@ -235,6 +236,34 @@ class TestEventFormatting:
         if life_events_section:
             # Birth should not appear as a separate event
             assert 'Birth' not in life_events_section or 'Marriage' in content
+
+    def test_coordinates_written(self, generator, temp_dir):
+        """Ensure that coordinates extracted from PLAC/MAP are written into notes."""
+        gedcom_content = """0 HEAD
+1 SOUR TestApp
+1 GEDC
+2 VERS 5.5.1
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Locator /Person/
+1 RESI
+2 PLAC Mapville
+3 MAP
+4 LATI 51.5074
+4 LONG -0.1278
+0 TRLR
+"""
+        temp_file = temp_dir / "coords_note.ged"
+        temp_file.write_text(gedcom_content, encoding='utf-8')
+
+        parser = GedcomParser(temp_file)
+        individuals = parser.get_individuals()
+        person = Individual(individuals[0], parser.parser)
+
+        file_path = generator.generate_note(person)
+        content = file_path.read_text()
+
+        assert '- **Coordinates**: 51.5074, -0.1278' in content
 
 
 class TestImageHandling:

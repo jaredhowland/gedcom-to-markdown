@@ -5,7 +5,7 @@ This module provides a rich data model for individuals in a family tree,
 extracting all relevant information from GEDCOM data.
 """
 
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 import logging
 import re
 
@@ -15,6 +15,7 @@ import gedcom.tags
 
 logger = logging.getLogger(__name__)
 
+EVENT_TAGS = {"BIRT", "DEAT", "MARR", "OCCU", "EDUC", "RESI", "BURI"}
 
 def collapse_single_line(text: str) -> str:
     """Normalize whitespace on a single logical line.
@@ -147,6 +148,18 @@ class Individual:
         """
         return self.element.get_pointer()
 
+    def get_fs_id(self) -> str:
+        """
+        Return the FamilySearch Tree ID (`_FSFTID`) if present.
+
+        Returns:
+            str: FamilySearch Tree ID value, or an empty string when not available.
+        """
+        for child in self.element.get_child_elements():
+            if child.get_tag() == "_FSFTID":
+                return child.get_value() or ""
+        return ""
+
     def get_names(self) -> Tuple[str, str]:
         """
         Return the individual's first and last name with surrounding whitespace removed.
@@ -191,49 +204,57 @@ class Individual:
 
     def get_birth_info(self) -> Dict[str, str]:
         """
-        Retrieve the person's birth date, place, and year from the underlying GEDCOM element.
+        Retrieve the person's birth date, place, year, and optional coordinates from the underlying GEDCOM element.
 
         Returns:
             dict: A dictionary with keys:
                 - 'date' (str): Birth date string or '' if unavailable.
                 - 'place' (str): Birth place string or '' if unavailable.
                 - 'year' (str): Birth year as a string or '' if the year is unknown.
+                - 'lat' (str): Latitude string if present, else ''
+                - 'long' (str): Longitude string if present, else ''
         """
-        date, place, _sources = self.element.get_birth_data()
+        birth_date, birth_place, lat, lon = self._get_event_info("BIRT")
+
+        # Fallback to helper methods for year if available
         year = self.element.get_birth_year()
+        birth_year = str(year) if year != -1 else ""
 
         return {
-            "date": date or "",
-            "place": place or "",
-            "year": str(year) if year != -1 else "",
+            "date": birth_date or "",
+            "place": birth_place or "",
+            "year": birth_year,
+            "lat": lat,
+            "long": lon,
         }
 
     def get_death_info(self) -> Dict[str, str]:
         """
-        Provide the individual's death date, place, and year.
+        Provide the individual's death date, place, year, and optional coordinates.
 
         Returns:
             dict: Dictionary with keys:
                 - date (str): Death date as a string, or '' if unknown.
                 - place (str): Death place as a string, or '' if unknown.
                 - year (str): Death year extracted from date, or '' if unavailable.
+                - lat (str): Latitude if present, else ''
+                - long (str): Longitude if present, else ''
         """
-        date, place, _sources = self.element.get_death_data()
+        death_date, death_place, lat, lon = self._get_event_info("DEAT")
+        year = self._extract_year(death_date)
 
-        # Extract year from date string using regex
-        # Handles formats like "1850", "ABT 1850", "1 JAN 1850", "JAN 1850"
-        year = ""
-        if date:
-            year_match = re.search(r'\b(\d{4})\b', date)
-            if year_match:
-                year = year_match.group(1)
-
-        return {"date": date or "", "place": place or "", "year": year}
+        return {
+            "date": death_date or "",
+            "place": death_place or "",
+            "year": year,
+            "lat": lat,
+            "long": lon,
+        }
 
     def get_gender(self) -> str:
         """
         Return the person's gender code.
-        
+
         Returns:
             str: `'M'` for male, `'F'` for female, `'U'` if unspecified or unknown.
         """
@@ -256,14 +277,13 @@ class Individual:
         Returns:
             children (List[Individual]): A list of Individual instances corresponding to this person's children.
         """
-        children = []
-        for family in self.gedcom.get_families(self.element):
-            child_elements = self.gedcom.get_family_members(
+        return [
+            Individual(child, self.gedcom)
+            for family in self.gedcom.get_families(self.element)
+            for child in self.gedcom.get_family_members(
                 family, gedcom.tags.GEDCOM_TAG_CHILD
             )
-            for child in child_elements:
-                children.append(Individual(child, self.gedcom))
-        return children
+        ]
 
     def get_partners(self) -> List["Individual"]:
         """
@@ -274,14 +294,13 @@ class Individual:
         Returns:
             List[Individual]: A list of Individual objects representing the person's partners (excluding the subject).
         """
-        partners = []
-        for family in self.gedcom.get_families(self.element):
-            parent_elements = self.gedcom.get_family_members(family, "PARENTS")
-            for parent in parent_elements:
-                # Don't include self
-                if parent.get_pointer() != self.element.get_pointer():
-                    partners.append(Individual(parent, self.gedcom))
-        return partners
+        self_pointer = self.element.get_pointer()
+        return [
+            Individual(parent, self.gedcom)
+            for family in self.gedcom.get_families(self.element)
+            for parent in self.gedcom.get_family_members(family, "PARENTS")
+            if parent.get_pointer() != self_pointer
+        ]
 
     def get_families(self) -> List[Dict]:
         """
@@ -295,36 +314,36 @@ class Individual:
             - children: List of Individual objects
         """
         families = []
+        # Cache the subject pointer once; it doesn't change across families.
+        self_pointer = self.element.get_pointer()
         for family in self.gedcom.get_families(self.element):
             # Get partner
-            partners = []
-            for parent in self.gedcom.get_family_members(family, "PARENTS"):
-                if parent.get_pointer() != self.element.get_pointer():
-                    partners.append(Individual(parent, self.gedcom))
+            partners = [
+                Individual(parent, self.gedcom)
+                for parent in self.gedcom.get_family_members(family, "PARENTS")
+                if parent.get_pointer() != self_pointer
+            ]
 
             # Get marriage info
-            marriage_date = ""
-            marriage_place = ""
-            for child in family.get_child_elements():
-                if child.get_tag() == "MARR":
-                    for subchild in child.get_child_elements():
-                        if subchild.get_tag() == "DATE":
-                            marriage_date = subchild.get_value()
-                        elif subchild.get_tag() == "PLAC":
-                            marriage_place = subchild.get_value()
+            marriage_date, marriage_place, marriage_lat, marriage_long = (
+                self._get_event_info("MARR", family)
+            )
 
             # Get children
-            children = []
-            for child in self.gedcom.get_family_members(
-                family, gedcom.tags.GEDCOM_TAG_CHILD
-            ):
-                children.append(Individual(child, self.gedcom))
+            children = [
+                Individual(child, self.gedcom)
+                for child in self.gedcom.get_family_members(
+                    family, gedcom.tags.GEDCOM_TAG_CHILD
+                )
+            ]
 
             families.append(
                 {
                     "partner": partners[0] if partners else None,
                     "marriage_date": marriage_date,
                     "marriage_place": marriage_place,
+                    "marriage_lat": marriage_lat,
+                    "marriage_long": marriage_long,
                     "children": children,
                 }
             )
@@ -337,60 +356,30 @@ class Individual:
 
         Returns:
             List of dictionaries with family information including:
-            - father: str (father's GEDCOM ID) or None
-            - mother: str (mother's GEDCOM ID) or None
+            - father: str (father's GEDCOM pointer, including surrounding '@' characters, e.g. '@I1@') or None
+            - mother: str (mother's GEDCOM pointer, including surrounding '@' characters, e.g. '@I2@') or None
         """
         families = []
+        self_pointer = self.element.get_pointer()
 
-        # Use the python-gedcom method to get parents
-        # Then find the family record that connects them
-        parent_elements = self.gedcom.get_parents(self.element)
-
-        # Get all family records
         for family in self.gedcom.get_root_child_elements():
-            if family.get_tag() == gedcom.tags.GEDCOM_TAG_FAMILY:
-                # Check if this person is a child in this family
-                children = self.gedcom.get_family_members(family, gedcom.tags.GEDCOM_TAG_CHILD)
-                child_pointers = [c.get_pointer() for c in children]
+            if family.get_tag() != gedcom.tags.GEDCOM_TAG_FAMILY:
+                continue
 
-                if self.element.get_pointer() in child_pointers:
-                    # This person is a child in this family, get the parents
-                    parents = self.gedcom.get_family_members(family, "PARENTS")
+            children = self.gedcom.get_family_members(family, gedcom.tags.GEDCOM_TAG_CHILD)
+            if not any(child.get_pointer() == self_pointer for child in children):
+                continue
 
-                    father_id = None
-                    mother_id = None
-
-                    for parent in parents:
-                        # Determine gender to assign father/mother
-                        # Check gender tag
-                        gender = None
-                        for child_elem in parent.get_child_elements():
-                            if child_elem.get_tag() == "SEX":
-                                gender = child_elem.get_value()
-                                break
-
-                        if gender == "M":
-                            father_id = parent.get_pointer()
-                        elif gender == "F":
-                            mother_id = parent.get_pointer()
-                        else:
-                            # If no gender specified, assign to father if empty, else mother
-                            if not father_id:
-                                father_id = parent.get_pointer()
-                            elif not mother_id:
-                                mother_id = parent.get_pointer()
-
-                    families.append({
-                        "father": father_id,
-                        "mother": mother_id,
-                    })
+            parents = self.gedcom.get_family_members(family, "PARENTS")
+            father_id, mother_id = self._resolve_parent_ids(parents)
+            families.append({"father": father_id, "mother": mother_id})
 
         return families
 
     def get_events(self) -> List[Dict[str, str]]:
         """
         Collects the individual's life events found on the GEDCOM element.
-        
+
         Returns:
             List[dict]: Each dictionary represents an event with keys:
                 - 'type' (str): GEDCOM event tag (e.g., 'BIRT', 'DEAT', 'MARR', 'OCCU', 'EDUC', 'RESI', 'BURI').
@@ -404,31 +393,153 @@ class Individual:
             tag = child.get_tag()
 
             # Common event tags
-            if tag in ["BIRT", "DEAT", "MARR", "OCCU", "EDUC", "RESI", "BURI"]:
+            if tag in EVENT_TAGS:
                 event = {
                     "type": tag,
                     "date": "",
                     "place": "",
                     "details": child.get_value() or "",
+                    "lat": "",
+                    "long": "",
                 }
 
-                # Extract date and place
-                for subchild in child.get_child_elements():
-                    if subchild.get_tag() == "DATE":
-                        event["date"] = subchild.get_value()
-                    elif subchild.get_tag() == "PLAC":
-                        event["place"] = subchild.get_value()
+                # Extract date, place, and optional coordinates from any event node.
+                event["date"], event["place"], event["lat"], event["long"] = (
+                    self._extract_date_place_and_coords(child)
+                )
 
                 events.append(event)
 
         return events
+
+    def _extract_year(self, value: str) -> str:
+        """Extract the first four-digit year from a string, if present."""
+        if not value:
+            return ""
+        year_match = re.search(r"\b(\d{4})\b", value)
+        return year_match.group(1) if year_match else ""
+
+    def _resolve_parent_ids(self, parents) -> Tuple[Optional[str], Optional[str]]:
+        """Resolve father/mother pointers from a list of parent elements."""
+        father_id = None
+        mother_id = None
+
+        for parent in parents:
+            pointer = parent.get_pointer()
+            gender = self._get_element_gender(parent)
+
+            if gender == "M":
+                father_id = pointer
+            elif gender == "F":
+                mother_id = pointer
+            elif not father_id:
+                father_id = pointer
+            elif not mother_id:
+                mother_id = pointer
+
+        return father_id, mother_id
+
+    def _get_element_gender(self, element) -> str:
+        """Get gender value from a GEDCOM element's SEX child tag."""
+        for child in element.get_child_elements():
+            if child.get_tag() == "SEX":
+                return child.get_value() or ""
+        return ""
+
+    def _get_event_info(
+        self, event_tag: str, parent_node=None
+    ) -> Tuple[str, str, str, str]:
+        """
+        Find the first child event by tag and extract (date, place, lat, long).
+
+        Parameters:
+            event_tag (str): GEDCOM event tag to search for (for example "BIRT").
+            parent_node: Optional node whose children are searched. Defaults to
+                the wrapped individual element.
+        """
+        node = parent_node if parent_node is not None else self.element
+        for child in node.get_child_elements():
+            if child.get_tag() == event_tag:
+                return self._extract_date_place_and_coords(child)
+        return "", "", "", ""
+
+    def _extract_date_place_and_coords(self, event_node) -> Tuple[str, str, str, str]:
+        """
+        Extract DATE, PLAC, and PLAC coordinates from an event-like GEDCOM node.
+
+        Returns:
+            Tuple[str, str, str, str]: (date, place, latitude, longitude), with
+            missing values returned as empty strings.
+        """
+        date_value = ""
+        place_value = ""
+        lati = ""
+        longi = ""
+
+        for child in event_node.get_child_elements():
+            if child.get_tag() == "DATE":
+                date_value = child.get_value() or ""
+            elif child.get_tag() == "PLAC":
+                place_value = child.get_value() or ""
+                lati, longi = self._extract_lat_long_from_plac(child)
+
+        return date_value, place_value, lati, longi
+
+    def _extract_lat_long_from_plac(self, plac_node) -> Tuple[str, str]:
+        """
+        Extract latitude and longitude values from a PLAC node if present.
+
+        The function looks for a MAP child beneath the PLAC node and then for
+        LATI and LONG tags. It also accepts LATI/LONG directly under PLAC.
+
+        Returns a tuple (latitude, longitude) where missing values are empty strings.
+        """
+        return self._extract_lat_long_from_node(plac_node)
+
+    def _extract_lat_long_from_node(self, node) -> Tuple[str, str]:
+        """
+        Recursively extract LATI/LONG values from any GEDCOM node subtree.
+
+        This supports coordinates directly under PLAC, under MAP, or in deeper
+        custom nesting used by some exports.
+        """
+        lati = ""
+        longi = ""
+
+        for child in node.get_child_elements():
+            tag = child.get_tag()
+
+            if tag == "LATI" and not lati:
+                lati = child.get_value() or ""
+                if lati and longi:
+                    return lati, longi
+                # Don't recurse into LATI leaf nodes
+                continue
+            elif tag == "LONG" and not longi:
+                longi = child.get_value() or ""
+                if lati and longi:
+                    return lati, longi
+                # Don't recurse into LONG leaf nodes
+                continue
+
+            # Recurse into other child nodes to find nested LATI/LONG
+            nested_lati, nested_longi = self._extract_lat_long_from_node(child)
+            if nested_lati and not lati:
+                lati = nested_lati
+            if nested_longi and not longi:
+                longi = nested_longi
+
+            if lati and longi:
+                return lati, longi
+
+        return lati, longi
 
     def get_images(self) -> List[Dict[str, str]]:
         """
         Return image/media entries referenced by this individual's OBJE nodes.
         
         Resolves OBJE references to their records and extracts FILE, TITL, and FORM values; entries without a FILE value are omitted.
-        
+
         Returns:
             List[Dict[str, str]]: A list of dictionaries each containing the keys 'file', 'title', and 'format'. The 'file' value is non-empty for all returned entries.
         """
@@ -436,24 +547,9 @@ class Individual:
 
         for child in self.element.get_child_elements():
             if child.get_tag() == "OBJE":
-                # OBJE can have a reference or inline data
-                reference = child.get_value()
-                if reference and reference.startswith("@"):
-                    # Resolve the reference to get actual file info
-                    obje_element = self.gedcom.get_element_dictionary().get(reference)
-                    if obje_element:
-                        image_info = {"file": "", "title": "", "format": ""}
-
-                        for obje_child in obje_element.get_child_elements():
-                            if obje_child.get_tag() == "FILE":
-                                image_info["file"] = obje_child.get_value() or ""
-                            elif obje_child.get_tag() == "TITL":
-                                image_info["title"] = obje_child.get_value() or ""
-                            elif obje_child.get_tag() == "FORM":
-                                image_info["format"] = obje_child.get_value() or ""
-
-                        if image_info["file"]:
-                            images.append(image_info)
+                image_info = self._get_obje_info(child.get_value())
+                if image_info:
+                    images.append(image_info)
 
         return images
 
@@ -485,7 +581,14 @@ class Individual:
         return resolve_gedcom_text(self.gedcom, value, element)
 
     def get_notes(self) -> List[str]:
-        """Return the person's notes with continuations resolved and extraneous whitespace collapsed per-line."""
+        """
+        Return the person's notes with inline continuations and referenced NOTE records resolved.
+
+        This resolves NOTE cross-references (values like `@X@`), appends `CONT`/`CONC` continuations, trims whitespace, and omits empty or unresolved references.
+
+        Returns:
+            List[str]: Note texts with continuations and referenced NOTE content merged; empty or unresolved notes are omitted.
+        """
         notes = []
         for child in self.element.get_child_elements():
             if child.get_tag() != "NOTE":
@@ -557,7 +660,7 @@ class Individual:
     def get_stories(self) -> List[Dict]:
         """
         Extract story and narrative records referenced by custom `_STO` tags for this individual.
-        
+
         Scans `_STO` child entries, resolves referenced story elements, and assembles structured story data.
         Each story dictionary contains:
         - `title` (str): story title (or empty string)
@@ -569,7 +672,7 @@ class Individual:
             - `file` (str): file path or name (required for inclusion)
             - `title` (str): image title (or empty string)
             - `format` (str): image format (or empty string)
-        
+
         Returns:
             List[Dict]: list of story dictionaries; empty list if no stories are found.
         """
@@ -617,37 +720,9 @@ class Individual:
                                                 text += "\n" + (cont.get_value() or "")
                                         section_data["text"] = text
                                     elif sts_child.get_tag() == "OBJE":
-                                        # Resolve image reference
-                                        img_ref = sts_child.get_value()
-                                        if img_ref and img_ref.startswith("@"):
-                                            obje_element = self.gedcom.get_element_dictionary().get(
-                                                img_ref
-                                            )
-                                            if obje_element:
-                                                image_info = {
-                                                    "file": "",
-                                                    "title": "",
-                                                    "format": "",
-                                                }
-                                                for (
-                                                    obje_child
-                                                ) in obje_element.get_child_elements():
-                                                    if obje_child.get_tag() == "FILE":
-                                                        image_info["file"] = (
-                                                            obje_child.get_value() or ""
-                                                        )
-                                                    elif obje_child.get_tag() == "TITL":
-                                                        image_info["title"] = (
-                                                            obje_child.get_value() or ""
-                                                        )
-                                                    elif obje_child.get_tag() == "FORM":
-                                                        image_info["format"] = (
-                                                            obje_child.get_value() or ""
-                                                        )
-                                                if image_info["file"]:
-                                                    section_data["images"].append(
-                                                        image_info
-                                                    )
+                                        image_info = self._get_obje_info(sts_child.get_value())
+                                        if image_info:
+                                            section_data["images"].append(image_info)
 
                                 if section_data["subtitle"] or section_data["text"]:
                                     story["sections"].append(section_data)
@@ -657,10 +732,30 @@ class Individual:
 
         return stories
 
+    def _get_obje_info(self, reference: str) -> Optional[Dict[str, str]]:
+        """Resolve an OBJE reference and return file metadata, or None if unavailable."""
+        if not reference or not reference.startswith("@"):
+            return None
+
+        obje_element = self.gedcom.get_element_dictionary().get(reference)
+        if not obje_element:
+            return None
+
+        image_info = {"file": "", "title": "", "format": ""}
+        for obje_child in obje_element.get_child_elements():
+            if obje_child.get_tag() == "FILE":
+                image_info["file"] = obje_child.get_value() or ""
+            elif obje_child.get_tag() == "TITL":
+                image_info["title"] = obje_child.get_value() or ""
+            elif obje_child.get_tag() == "FORM":
+                image_info["format"] = obje_child.get_value() or ""
+
+        return image_info if image_info["file"] else None
+
     def get_attributes(self) -> Dict[str, str]:
         """
         Collect physical attributes from the underlying GEDCOM individual element.
-        
+
         Returns:
             Dict[str, str]: A dictionary with keys 'eyes', 'hair', and 'heig' (lowercase).
                 Each value is the corresponding attribute string or an empty string if absent.
