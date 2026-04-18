@@ -15,6 +15,7 @@ from typing import List, Dict, Tuple, Optional, Any
 from collections import deque
 from individual import Individual
 from canvas_layout import calculate_subtree_widths
+from utils import extract_year
 
 
 logger = logging.getLogger(__name__)
@@ -1356,11 +1357,8 @@ class CanvasGenerator:
         events = getattr(individual, "get_events", lambda: [])()
         for event in events:
             if (event.get("type") == "BIRT") and event.get("date"):
-                import re
-
-                year_match = re.search(r"\b(\d{4})\b", event.get("date", ""))
-                if year_match:
-                    birth_year = year_match.group(1)
+                birth_year = extract_year(event.get("date", ""))
+                if birth_year:
                     break
 
         # Build filename for WikiLink

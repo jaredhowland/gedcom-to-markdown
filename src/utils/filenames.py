@@ -12,23 +12,13 @@ in filenames and to collapse runs of whitespace.
 
 from __future__ import annotations
 
-import re
 from typing import Optional
-
-
-# Characters not allowed in many filesystems or problematic in Obsidian/WikiLinks
-_INVALID_CHARS = re.compile(r'[\\/:*?"<>|]')
-_WHITESPACE = re.compile(r"\s+")
+from utils import regex as regex_utils
 
 
 def _sanitize(text: str) -> str:
-    if not text:
-        return ""
-    # Strip surrounding whitespace, remove invalid filename chars, collapse internal whitespace
-    t = text.strip()
-    t = _INVALID_CHARS.sub("", t)
-    t = _WHITESPACE.sub(" ", t)
-    return t
+    """Delegate sanitization to utils.regex to centralize filename rules."""
+    return regex_utils.sanitize_filename(text)
 
 
 def make_person_filename(

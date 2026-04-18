@@ -12,7 +12,7 @@ so behavior is unchanged during migration.
 """
 
 from typing import List, Optional
-import re
+from utils.regex import NAME_RE, HTML_TAG_RE
 
 
 def collapse_single_line(text: Optional[str]) -> str:
@@ -59,17 +59,17 @@ def repair_broken_html_tags(text: str) -> str:
 
     WHITELIST = {"br", "b", "i", "strong", "em", "a", "span", "div", "p", "ul", "li"}
 
-    def repl(m: re.Match) -> str:
+    def repl(m):
         raw = m.group(0)
         content = raw[1:-1]
         content_no_nl = content.replace("\n", "").replace("\r", "")
-        name_m = re.match(r"\s*/?\s*([A-Za-z0-9]+)", content_no_nl)
+        name_m = NAME_RE.match(content_no_nl)
         if name_m and name_m.group(1).lower() in WHITELIST:
             repaired = "<" + content_no_nl + ">"
             return repaired
         return raw
 
-    return re.sub(r"<[^>]*>", repl, text, flags=re.DOTALL)
+    return HTML_TAG_RE.sub(repl, text)
 
 
 def write_multiline_note_block(f, lines: List[str], nested: bool = True) -> None:

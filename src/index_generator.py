@@ -8,11 +8,11 @@ family tree.
 from pathlib import Path
 from typing import List, Any, Optional
 import logging
-import re
+from utils import extract_year
 
 # Avoid importing `individual` at module import time to keep this module test-friendly
 # and to prevent hard dependency on python-gedcom during isolated unit tests.
-from filename_mapper import FilenameRegistry  # canonical filename utility
+from utils import FilenameRegistry  # canonical filename utility
 from utils import sort as sort_utils
 
 
@@ -110,9 +110,7 @@ class IndexGenerator:
                 if birth_year or death_date:
                     death_year = ""
                     if death_date:
-                        from utils import date as date_utils
-
-                        death_year = date_utils.extract_year(death_date)
+                        death_year = extract_year(death_date)
                     life_span = f" ({birth_year}-{death_year})"
                 else:
                     life_span = ""

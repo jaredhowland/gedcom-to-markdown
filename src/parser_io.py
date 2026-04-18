@@ -10,7 +10,7 @@ pre-parsed Parser instance is used.
 from pathlib import Path
 import logging
 
-from gedcom.parser import Parser
+from gedcom.parser import Parser, GedcomFormatViolationError
 from gedcom_parser import GedcomParser
 
 logger = logging.getLogger(__name__)
@@ -45,9 +45,17 @@ def parse_from_path(path: Path) -> GedcomParser:
     parser = Parser()
     try:
         parser.parse_file(str(path))
-    except Exception as e:
+    except GedcomFormatViolationError as e:
+        # Specific parsing error raised by python-gedcom when the document
+        # violates GEDCOM 5.5 format. Convert to our ValueError API.
+        logger.exception("GEDCOM format violation: %s", e)
+        raise ValueError(f"Failed to parse GEDCOM file: {e}") from e
+    except (RuntimeError, ValueError) as e:
         logger.exception("Failed to parse GEDCOM file: %s", e)
         raise ValueError(f"Failed to parse GEDCOM file: {e}") from e
+    except OSError as e:
+        logger.exception("I/O error reading GEDCOM file: %s", e)
+        raise
 
     # Wrap the parser in our GedcomParser (no further IO performed)
     return GedcomParser(parser, file_path=path)

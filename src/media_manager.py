@@ -60,7 +60,7 @@ def copy_media(source_dir: Path, dest_dir: Path) -> dict:
 
         try:
             rel = src.relative_to(source_dir)
-        except Exception:
+        except ValueError:
             rel = src.name
 
         # Compute intended dest preserving structure
@@ -75,7 +75,7 @@ def copy_media(source_dir: Path, dest_dir: Path) -> dict:
 
         try:
             shutil.copy2(src, dest)
-        except Exception:
+        except OSError:
             logger.exception("Failed to copy media file: %s", src)
             continue
 

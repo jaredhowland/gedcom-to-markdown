@@ -42,6 +42,7 @@ class GedcomParser:
         Raises:
             FileNotFoundError: If a Path is provided and the file does not exist.
             ValueError: If parsing the GEDCOM file fails.
+            TypeError: If `source` is neither a Parser nor a Path.
         """
         # If a Parser instance is provided, use it directly (no IO)
         if isinstance(source, Parser):
@@ -49,36 +50,19 @@ class GedcomParser:
             self.file_path = file_path
             return
 
-        # Otherwise, fall back to the legacy behaviour that accepts a Path
-        file_path = source
-        if not file_path.exists():
-            raise FileNotFoundError(f"GEDCOM file not found: {file_path}")
+        # If a Path is provided, delegate file IO to parser_io.parse_from_path
+        if isinstance(source, Path):
+            from parser_io import parse_from_path
 
-        self.file_path = file_path
+            # parse_from_path returns a GedcomParser, reuse its internal parser
+            ged_parser = parse_from_path(source)
+            self.parser = ged_parser.parser
+            self.file_path = ged_parser.file_path
+            return
 
-        # Normalize line endings using utils.io.normalize_line_endings
-        from utils import io as io_utils
-
-        raw = self.file_path.read_bytes()
-        normalized = io_utils.normalize_line_endings(raw)
-
-        # Detect CR-only originally: raw contained '\r' but no '\n' or '\r\n'
-        if b"\r" in raw and b"\n" not in raw:
-            logger.warning(
-                "Detected old Mac-style (CR-only) line endings in GEDCOM file. Converting to Unix-style (LF) line endings..."
-            )
-            # Write normalized content back to disk
-            self.file_path.write_text(normalized, encoding="utf-8")
-            logger.info("Line endings fixed successfully")
-
-        # Initialize the underlying python-gedcom Parser and parse the file
-        self.parser = Parser()
-        try:
-            # parse_file expects a path (string)
-            self.parser.parse_file(str(self.file_path))
-        except Exception as e:
-            logger.exception("Failed to parse GEDCOM file: %s", e)
-            raise ValueError(f"Failed to parse GEDCOM file: {e}")
+        raise TypeError(
+            "GedcomParser expects a gedcom.parser.Parser or a pathlib.Path to a GEDCOM file."
+        )
 
     def get_individuals(self) -> List[IndividualElement]:
         """

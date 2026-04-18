@@ -28,7 +28,7 @@ def normalize_line_endings(raw: bytes) -> str:
     """
     try:
         decoded = raw.decode("utf-8")
-    except Exception:
+    except UnicodeDecodeError:
         decoded = raw.decode("utf-8", errors="ignore")
 
     # CR-only (old Mac) -> replace '\r' with '\n' when no '\n' present

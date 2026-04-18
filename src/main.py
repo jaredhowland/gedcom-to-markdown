@@ -244,45 +244,12 @@ def convert_gedcom_to_markdown(
 
                 media_map = copy_media(media_dir, media_output_dir)
                 logger.info(f"Copied {len(media_map)} media files")
-            except Exception:
+            except ImportError:
+                # MediaManager is optional; log and continue without ad-hoc fallback.
                 logger.exception(
-                    "Media copying failed using MediaManager; falling back to ad-hoc copy"
+                    "MediaManager not available; skipping media copy (no ad-hoc fallback)"
                 )
-                # Fallback to previous ad-hoc behavior
-                copied_count = 0
-                skipped_count = 0
-                collision_count = 0
-
-                allowed_extensions = {".jpg", ".jpeg", ".png", ".gif", ".bmp"}
-                for media_file in media_dir.rglob("*"):
-                    if not media_file.is_file():
-                        continue
-                    if media_file.suffix.lower() not in allowed_extensions:
-                        continue
-                    relative_path = media_file.relative_to(media_dir)
-                    dest = media_output_dir / relative_path
-                    if dest.exists():
-                        original_dest = dest
-                        counter = 1
-                        stem = dest.stem
-                        suffix = dest.suffix
-                        while dest.exists():
-                            dest = dest.parent / f"{stem}_{counter}{suffix}"
-                            counter += 1
-                        logger.warning(
-                            f"Collision detected: {original_dest.name} -> {dest.name}"
-                        )
-                        collision_count += 1
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    try:
-                        shutil.copy2(media_file, dest)
-                        copied_count += 1
-                    except (IOError, OSError):
-                        logger.exception(f"Failed to copy {media_file}")
-                        skipped_count += 1
-                logger.info(
-                    f"Copied {copied_count} media files ({collision_count} collisions resolved, {skipped_count} skipped)"
-                )
+                media_map = {}
 
         # Generate index
         logger.debug(f"create_index flag value: {create_index!r}")
@@ -306,8 +273,8 @@ def convert_gedcom_to_markdown(
     except ValueError:
         logger.exception("Invalid input")
         return 1
-    except Exception:
-        logger.exception("Unexpected error")
+    except (RuntimeError, OSError):
+        logger.exception("Unexpected runtime/IO error")
         return 1
 
     finally:
@@ -321,11 +288,11 @@ def convert_gedcom_to_markdown(
                         if idx.is_file() and idx.name.lower() == "index.md":
                             logger.debug(f"(Cleanup) Removing stray Index.md: {idx}")
                             idx.unlink()
-                    except Exception:
+                    except OSError:
                         logger.exception(
                             f"(Cleanup) Failed to remove stray Index.md: {idx}"
                         )
-        except Exception:
+        except OSError:
             logger.exception("(Cleanup) Failed to scan for stray Index.md files")
         # Log any remaining index files for debugging
         try:
@@ -340,7 +307,7 @@ def convert_gedcom_to_markdown(
                 )
             else:
                 logger.info("(Cleanup) No index files remain after cleanup")
-        except Exception:
+        except OSError:
             logger.exception("(Cleanup) Failed to list remaining index files")
 
 
@@ -446,7 +413,7 @@ def main():
                     clsname = getattr(cls, "__name__", str(cls))
                     print(f"- {name}: {module}.{clsname}")
             return 0
-        except Exception:
+        except (ImportError, RuntimeError):
             logger.exception("Failed to list canvas plugins")
             return 1
 

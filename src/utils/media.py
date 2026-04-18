@@ -43,7 +43,7 @@ def copy_media_preserve_structure(
             try:
                 if dest.read_bytes() == f.read_bytes():
                     continue
-            except Exception:
+            except OSError:
                 pass
             stem = dest.stem
             suffix = dest.suffix

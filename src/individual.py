@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import List, Dict, Tuple, Optional, TYPE_CHECKING
 import logging
 import re
+from utils import extract_year
 
 if TYPE_CHECKING:
     # Imported for type-checking only; avoid runtime dependency on python-gedcom
@@ -20,96 +21,7 @@ logger = logging.getLogger(__name__)
 EVENT_TAGS = {"BIRT", "DEAT", "MARR", "OCCU", "EDUC", "RESI", "BURI"}
 
 
-def collapse_single_line(text: str) -> str:
-    """Normalize whitespace on a single logical line.
-
-    This helper collapses runs of whitespace (spaces, tabs) into single spaces
-    and trims leading/trailing whitespace. It is intended for short metadata
-    fields such as titles, publication strings, or other single-line values
-    where internal spacing should be normalized but line breaks must be
-    preserved elsewhere.
-
-    Examples:
-        >>> collapse_single_line("  Overland    Travels  Pioneer   Detail  ")
-        'Overland Travels Pioneer Detail'
-
-    Returns an empty string when passed a false-y value.
-    """
-    return " ".join(text.split()).strip() if text else ""
-
-
-def resolve_gedcom_text(parser, value: str, element=None) -> str:
-    """Resolve a GEDCOM text value including CONT/CONC continuations.
-
-    GEDCOM continuation rules:
-    - CONC: concatenate to previous line (no newline inserted)
-    - CONT: start a new line (insert a newline in the output)
-
-    This helper handles both pointer-style NOTE references (e.g. "@N1@") and
-    inline NOTE bodies (where the parent element contains CONT/CONC children).
-
-    Parameters
-    ----------
-    parser:
-        The GEDCOM parser instance used to resolve pointer targets via
-        parser.get_element_dictionary().
-    value (str):
-        The immediate value of the tag. May be a pointer ("@N1@") or plain
-        text. When it's a pointer, the referenced element is resolved and its
-        child CONT/CONC lines are applied.
-    element:
-        Optional element whose child CONT/CONC children should be read when
-        resolving inline NOTE content. Provide this when `value` is an inline
-        value and the continuations are stored on the element itself.
-
-    Returns
-    -------
-    str
-        Resolved text with CONC concatenated directly and CONT lines separated
-        by a single newline. Empty CONT/CONC values are skipped.
-
-    Examples
-    --------
-    Given a referenced NOTE element with:
-        0 @N1@ NOTE
-        1 CONT First line
-        1 CONC -continued
-        1 CONT Second para
-    Calling resolve_gedcom_text(parser, "@N1@") returns:
-        "First line-continued\nSecond para"
-    """
-    # Pointer/reference to another element (e.g., NOTE record)
-    if value and value.startswith("@") and value.endswith("@"):
-        target = parser.get_element_dictionary().get(value)
-        if not target:
-            return ""
-        text = target.get_value() or ""
-        # Respect CONT vs CONC semantics: CONT => newline, CONC => concatenate.
-        # An empty CONT line represents a blank line in GEDCOM and must still
-        # contribute a newline so paragraph breaks are preserved.
-        for sub in target.get_child_elements():
-            tag = sub.get_tag()
-            val = sub.get_value() or ""
-            if tag == "CONC":
-                if val:
-                    text += val
-            elif tag == "CONT":
-                text += "\n" + val
-        return text
-
-    # Inline text with possible CONT/CONC children.
-    # Same rule: empty CONC is a no-op, but empty CONT preserves a blank line.
-    text = value or ""
-    if element is not None:
-        for sub in element.get_child_elements():
-            tag = sub.get_tag()
-            val = sub.get_value() or ""
-            if tag == "CONC":
-                if val:
-                    text += val
-            elif tag == "CONT":
-                text += "\n" + val
-    return text
+from utils import collapse_single_line, resolve_gedcom_text, make_person_filename
 
 
 class Individual:
@@ -196,25 +108,8 @@ class Individual:
         birth_info = self.get_birth_info()
         birth_year = birth_info.get("year", "")
 
-        # Delegate to shared filename helper
-        try:
-            from utils import filenames as filename_utils
-
-            return filename_utils.make_person_filename(
-                first, last, birth_year, fallback_id=self.get_id()
-            )
-        except Exception:
-            # Fallback to prior behavior if utils unavailable
-            parts = []
-            if last:
-                parts.append(last)
-            if first:
-                parts.append(first)
-            if birth_year:
-                parts.append(birth_year)
-            if parts:
-                return " ".join(parts)
-            return self.get_id()
+        # Use the shared filename helper from utils
+        return make_person_filename(first, last, birth_year, fallback_id=self.get_id())
 
     def get_birth_info(self) -> Dict[str, str]:
         """
@@ -255,7 +150,7 @@ class Individual:
                 - long (str): Longitude if present, else ''
         """
         death_date, death_place, lat, lon = self._get_event_info("DEAT")
-        year = self._extract_year(death_date)
+        year = extract_year(death_date)
 
         return {
             "date": death_date or "",
@@ -421,13 +316,6 @@ class Individual:
                 events.append(event)
 
         return events
-
-    def _extract_year(self, value: str) -> str:
-        """Extract the first four-digit year from a string, if present."""
-        if not value:
-            return ""
-        year_match = re.search(r"\b(\d{4})\b", value)
-        return year_match.group(1) if year_match else ""
 
     def _resolve_parent_ids(self, parents) -> Tuple[Optional[str], Optional[str]]:
         """Resolve father/mother pointers from a list of parent elements."""

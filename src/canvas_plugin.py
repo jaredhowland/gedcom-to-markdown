@@ -33,7 +33,7 @@ def discover_entrypoint_plugins(
         try:
             # Python 3.8+ importlib.metadata
             from importlib import metadata as importlib_metadata
-        except Exception:
+        except ImportError:
             import importlib_metadata  # type: ignore
 
         # `entry_points(group=...)` is supported in newer stdlib versions
@@ -65,9 +65,20 @@ def discover_entrypoint_plugins(
                     )
                 else:
                     logger.debug("Skipping non-callable entry point: %r", ep)
-            except Exception:
-                logger.exception("Failed to load canvas plugin entry point: %r", ep)
-    except Exception:
+            except Exception as e:
+                # Intentionally broad: plugin entry points execute third-party code and
+                # may raise many different exceptions (ImportError, AttributeError,
+                # RuntimeError, etc.). Discovery is best-effort and must not allow a
+                # faulty plugin to crash the host application. Catching Exception here
+                # ensures we log the failure (including traceback) and continue.
+                # Do NOT catch BaseException (KeyboardInterrupt/SystemExit) so those
+                # still propagate normally.
+                logger.exception(
+                    "Failed to load canvas plugin entry point %r: %s",
+                    ep,
+                    e,
+                )
+    except (ImportError, AttributeError, TypeError):
         # Discovery is best-effort; do not raise to avoid breaking runtime.
         logger.debug(
             "Canvas plugin discovery skipped (importlib.metadata unavailable or failed)"
@@ -90,20 +101,14 @@ def get_canvas_plugin(name: Optional[str] = None) -> Type:
 
     if name is None or plugin_name == "default":
         # Lazy default registration: import the bundled CanvasGenerator
-        try:
-            # Prefer package-local import (when running as module)
-            from canvas_generator import CanvasGenerator
-        except Exception:
-            # Fallback to package import path used by some test runners
-            from src.canvas_generator import CanvasGenerator
+        from canvas_generator import CanvasGenerator
 
         register_canvas_plugin("default", CanvasGenerator)
         return _registry.get(plugin_name, CanvasGenerator)
 
     available_plugins = ", ".join(sorted(_registry)) or "default"
     raise ValueError(
-        f"Unknown canvas plugin: {plugin_name}. "
-        f"Available plugins: {available_plugins}"
+        f"Unknown canvas plugin: {plugin_name}. Available plugins: {available_plugins}"
     )
 
 

@@ -10,9 +10,16 @@ from typing import List, Optional, Any
 import logging
 import re
 
-from individual import Individual, resolve_gedcom_text
-import utils.text as text_utils
-from filename_mapper import FilenameRegistry  # canonical filename utility
+from individual import Individual
+from utils import resolve_gedcom_text
+from utils import (
+    collapse_single_line,
+    collapse_preserve_lines,
+    escape_markdown,
+    repair_broken_html_tags,
+    write_multiline_note_block,
+)
+from utils import FilenameRegistry  # canonical filename utility
 import io
 from io_manager import write_text_file
 
@@ -135,7 +142,7 @@ class MarkdownGenerator:
             if parser:
                 try:
                     self._generate_sources_index(parser)
-                except Exception:
+                except (OSError, AttributeError, ValueError):
                     logger.exception("Failed to generate sources index")
                     # Prevent repeated expensive retries on persistent failures (e.g., IO/permissions)
                     self._sources_index_generated = True
@@ -525,16 +532,16 @@ class MarkdownGenerator:
     def _collapse_single_line(self, text: str) -> str:
         """Normalize a single-line string's internal whitespace.
 
-        Delegates to utils.text.collapse_single_line to centralize text helpers.
+        Delegates to package-level utils.collapse_single_line for convenience.
         """
-        return text_utils.collapse_single_line(text)
+        return collapse_single_line(text)
 
     def _collapse_preserve_lines(self, text: str) -> str:
         """Collapse runs of whitespace within each line but preserve line breaks.
 
         Delegates to utils.text.collapse_preserve_lines.
         """
-        return text_utils.collapse_preserve_lines(text)
+        return collapse_preserve_lines(text)
 
     def _format_source_entry(self, title: str, publ: str) -> str:
         """Return a formatted markdown line for a source entry.
@@ -608,7 +615,7 @@ class MarkdownGenerator:
             # Prevent repeated attempts on failure
             self._sources_index_generated = True
             return
-        except Exception:
+        except (RuntimeError, TypeError):
             # Unexpected failure type: log at debug and mark generated to avoid retry storms
             logger.exception(
                 "Unexpected error retrieving GEDCOM element dictionary for sources index"
@@ -691,14 +698,14 @@ class MarkdownGenerator:
 
         Delegates to utils.text.escape_markdown.
         """
-        return text_utils.escape_markdown(text)
+        return escape_markdown(text)
 
     def _repair_broken_html_tags(self, text: str) -> str:
         """Repair a small set of HTML tags that may have been split across GEDCOM lines.
 
         Delegates to utils.text.repair_broken_html_tags for conservative repairs.
         """
-        return text_utils.repair_broken_html_tags(text)
+        return repair_broken_html_tags(text)
 
     def _write_multiline_note_block(
         self, f, lines: List[str], nested: bool = True
@@ -708,7 +715,7 @@ class MarkdownGenerator:
         Delegates to the shared utils.text.write_multiline_note_block implementation
         to keep rendering behavior centralized and consistent across callers.
         """
-        return text_utils.write_multiline_note_block(f, lines, nested)
+        return write_multiline_note_block(f, lines, nested)
 
     def _write_metadata(self, f, key: str, value: str):
         """
@@ -778,7 +785,7 @@ class MarkdownGenerator:
             try:
                 path = self.generate_note(individual)
                 paths.append(path)
-            except Exception:
+            except (OSError, ValueError, AttributeError):
                 logger.exception(
                     f"Failed to generate note for {individual.get_full_name()}"
                 )
@@ -796,6 +803,6 @@ class MarkdownGenerator:
             if parser:
                 try:
                     self._generate_sources_index(parser)
-                except Exception:
+                except (OSError, AttributeError, ValueError):
                     logger.exception("Failed to generate sources index")
         return paths

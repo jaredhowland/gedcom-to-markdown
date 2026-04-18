@@ -28,11 +28,7 @@ def convert(
     # Import the core conversion function from the module named 'main' which
     # lives on sys.path via pytest.ini (src on PYTHONPATH). This mirrors how
     # the codebase has historically been imported by tests and callers.
-    try:
-        from main import convert_gedcom_to_markdown as _convert
-    except Exception:
-        # Fallback to src.main if import as 'main' doesn't resolve
-        from src.main import convert_gedcom_to_markdown as _convert
+    from main import convert_gedcom_to_markdown as _convert
 
     exit_code = _convert(
         gedcom_file=gedcom_file,
