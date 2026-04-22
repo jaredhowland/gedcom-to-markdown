@@ -11,18 +11,19 @@ __version__ = "1.0.0"
 import argparse
 import logging
 import sys
-import tempfile
 import zipfile
 import shutil
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Any
 
-from gedcom_parser import GedcomParser
+from parser_io import parse_from_path
+
+# Backwards-compatible import for external callers/tests
+from gedcom_parser import GedcomParser  # noqa: E402
 from individual import Individual
 from markdown_generator import MarkdownGenerator
 from index_generator import IndexGenerator
-from canvas_generator import CanvasGenerator
-from person_selector import select_root_person
+from canvas_plugin import get_canvas_plugin
 
 
 def setup_logging(verbose: bool = False):
@@ -57,7 +58,7 @@ def setup_logging(verbose: bool = False):
         logging.getLogger(__name__).setLevel(logging.INFO)
 
 
-def extract_gedzip(zip_path: Path, temp_dir: Path) -> Tuple[Path, Optional[Path]]:
+def extract_gedzip(zip_path: Path, temp_dir: Path) -> Tuple[Path, Any]:
     """
     Extracts a ZIP/GEDZIP archive and locates the GEDCOM file and an optional
     media directory.
@@ -100,7 +101,18 @@ def extract_gedzip(zip_path: Path, temp_dir: Path) -> Tuple[Path, Optional[Path]
     # Find media files across the entire extracted tree
     media_dir = None
     media_files = []
-    for ext in ["*.jpg", "*.jpeg", "*.png", "*.gif", "*.bmp", "*.JPG", "*.JPEG", "*.PNG", "*.GIF", "*.BMP"]:
+    for ext in [
+        "*.jpg",
+        "*.jpeg",
+        "*.png",
+        "*.gif",
+        "*.bmp",
+        "*.JPG",
+        "*.JPEG",
+        "*.PNG",
+        "*.GIF",
+        "*.BMP",
+    ]:
         media_files.extend(temp_dir.rglob(ext))
 
     if media_files:
@@ -108,8 +120,12 @@ def extract_gedzip(zip_path: Path, temp_dir: Path) -> Tuple[Path, Optional[Path]
         media_dir = temp_dir
         # Get unique parent directories for logging
         unique_dirs = sorted(set(f.parent for f in media_files))
-        logger.info(f"Found {len(media_files)} media files across {len(unique_dirs)} directories")
-        logger.debug(f"Media directories: {[str(d.relative_to(temp_dir)) for d in unique_dirs]}")
+        logger.info(
+            f"Found {len(media_files)} media files across {len(unique_dirs)} directories"
+        )
+        logger.debug(
+            f"Media directories: {[str(d.relative_to(temp_dir)) for d in unique_dirs]}"
+        )
 
     return gedcom_file, media_dir
 
@@ -122,6 +138,8 @@ def convert_gedcom_to_markdown(
     use_flat_structure: bool = False,
     create_canvas: bool = False,
     root_id: Optional[str] = None,
+    plugin_name: Optional[str] = None,
+    # Media/download/testing options (kept for backward compatibility)
     download_media: bool = False,
     media_download_timeout: int = 15,
     media_download_retries: int = 2,
@@ -170,16 +188,12 @@ def convert_gedcom_to_markdown(
             stories_dir = output_dir
             media_subdir_name = ""
             stories_subdir_name = ""
-            people_subdir_name = ""
         else:
             people_dir = output_dir / "people"
-            # Use provided media_subdir_name when available, otherwise default to 'media'
-            resolved_media_subdir = media_subdir_name if media_subdir_name else "media"
-            media_output_dir = output_dir / resolved_media_subdir
+            media_output_dir = output_dir / "media"
             stories_dir = output_dir / "stories"
-            media_subdir_name = resolved_media_subdir
+            media_subdir_name = "media"
             stories_subdir_name = "stories"
-            people_subdir_name = "people"
 
             # Create subdirectories
             people_dir.mkdir(parents=True, exist_ok=True)
@@ -188,7 +202,8 @@ def convert_gedcom_to_markdown(
 
         # Parse GEDCOM file
         logger.info(f"Parsing GEDCOM file: {gedcom_file}")
-        parser = GedcomParser(gedcom_file)
+        # Use parse_from_path to keep file-level IO centralized
+        parser = parse_from_path(gedcom_file)
 
         # Get all individuals
         individual_elements = parser.get_individuals()
@@ -201,32 +216,38 @@ def convert_gedcom_to_markdown(
         # Wrap individuals in our data model
         individuals = [Individual(elem, parser.parser) for elem in individual_elements]
 
-        # Optionally limit the number of individuals processed (useful for testing)
-        if max_individuals is not None and max_individuals > 0:
-            individuals = individuals[:int(max_individuals)]
-
         # Generate canvas if requested
         if create_canvas:
             logger.info("Canvas generation requested")
-            root_person_id = select_root_person(individuals, root_id)
-
-            if root_person_id:
+            # Interactive selector removed in refactor; accept explicit root_id only.
+            if root_id:
+                # Normalize GEDCOM ID if necessary
+                root_person_id = root_id if root_id.startswith("@") else f"@{root_id}@"
                 logger.info(f"Generating canvas with root person: {root_person_id}")
-                canvas_gen = CanvasGenerator(individuals, str(output_dir))
+                # Allow selecting a registered plugin by name; default resolves to bundled CanvasGenerator
+                plugin_cls = (
+                    get_canvas_plugin(plugin_name)
+                    if plugin_name
+                    else get_canvas_plugin()
+                )
+                canvas_gen = plugin_cls(individuals, str(output_dir))
                 canvas_path = canvas_gen.generate_canvas(root_person_id)
                 logger.info(f"Canvas created: {canvas_path}")
             else:
-                logger.warning("No root person selected, skipping canvas generation")
+                logger.warning(
+                    "Interactive person selector removed; skipping canvas generation without explicit root_id"
+                )
 
         # Generate markdown notes
         logger.info(f"Generating markdown notes in: {people_dir}")
+        # Pass download and media folder options into the generator when supported
         generator = MarkdownGenerator(
-            output_dir,
-            people_subdir=people_subdir_name,
+            people_dir,
             media_subdir=media_subdir_name,
             stories_subdir=stories_subdir_name,
             stories_dir=stories_dir,
             use_subdirectories=not use_flat_structure,
+            # Backwards-compatible download args (MarkdownGenerator may ignore unknown kwargs)
             download_media=download_media,
             download_timeout=media_download_timeout,
             download_retries=media_download_retries,
@@ -242,80 +263,44 @@ def convert_gedcom_to_markdown(
         created_files = generator.generate_all(individuals)
         logger.info(f"Created {len(created_files)} markdown files")
 
+        # Download external media as a final step (embed local images into person notes and produce map)
+        if download_media:
+            logger.info("Downloading external media as final step")
+            # Ensure media_output_dir exists
+            media_output_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                generator._download_external_media(individuals, media_output_dir)
+            except Exception:
+                logger.exception("External media download pass failed")
+
         # Copy media files if available
         if media_dir and media_dir.exists():
             logger.info(f"Copying media files to: {media_output_dir}")
+            try:
+                from media_manager import copy_media
 
-            # Allowed media extensions (case-insensitive)
-            allowed_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp'}
-
-            copied_count = 0
-            skipped_count = 0
-            collision_count = 0
-
-            # Recursively find all files in media_dir
-            for media_file in media_dir.rglob('*'):
-                # Skip directories, only process files
-                if not media_file.is_file():
-                    continue
-
-                # Filter by extension (case-insensitive)
-                if media_file.suffix.lower() not in allowed_extensions:
-                    continue
-
-                # Compute relative path to preserve directory structure
-                relative_path = media_file.relative_to(media_dir)
-                dest = media_output_dir / relative_path
-
-                # Handle filename collisions
-                if dest.exists():
-                    # Generate unique filename with numeric suffix
-                    original_dest = dest
-                    counter = 1
-                    stem = dest.stem
-                    suffix = dest.suffix
-
-                    while dest.exists():
-                        dest = dest.parent / f"{stem}_{counter}{suffix}"
-                        counter += 1
-
-                    logger.warning(
-                        f"Collision detected: {original_dest.name} -> {dest.name}"
-                    )
-                    collision_count += 1
-
-                # Ensure parent directory exists
-                dest.parent.mkdir(parents=True, exist_ok=True)
-
-                # Copy file preserving metadata
-                try:
-                    shutil.copy2(media_file, dest)
-                    copied_count += 1
-                except (IOError, OSError) as e:
-                    logger.exception(f"Failed to copy {media_file}")
-                    skipped_count += 1
-
-            logger.info(
-                f"Copied {copied_count} media files "
-                f"({collision_count} collisions resolved, {skipped_count} skipped)"
-            )
+                media_map = copy_media(media_dir, media_output_dir)
+                logger.info(f"Copied {len(media_map)} media files")
+            except ImportError:
+                # MediaManager is optional; log and continue without ad-hoc fallback.
+                logger.exception(
+                    "MediaManager not available; skipping media copy (no ad-hoc fallback)"
+                )
+                media_map = {}
 
         # Generate index
+        logger.debug(f"create_index flag value: {create_index!r}")
+        logger.info(f"Effective create_index={create_index!r}")
         if create_index:
             logger.info("Generating index file")
             people_subdir_name = "" if use_flat_structure else "people"
             index_gen = IndexGenerator(
                 output_dir,
                 people_subdir=people_subdir_name,
-                filename_map=generator.filename_map
+                filename_map=generator.filename_map,
             )
             index_path = index_gen.generate_index(individuals)
             logger.info(f"Created index file: {index_path}")
-
-        if download_media:
-            logger.info("Downloading external media as final step")
-            generator._download_external_media(individuals, media_output_dir)
-
         logger.info("Conversion completed successfully")
         return 0
 
@@ -325,9 +310,42 @@ def convert_gedcom_to_markdown(
     except ValueError:
         logger.exception("Invalid input")
         return 1
-    except Exception:
-        logger.exception("Unexpected error")
+    except (RuntimeError, OSError):
+        logger.exception("Unexpected runtime/IO error")
         return 1
+
+    finally:
+        # Ensure that when create_index is False, no Index.md remains in the
+        # output directory subtree. This also acts as a safeguard against any
+        # code path that may have created an index despite the caller's flag.
+        try:
+            if not create_index:
+                for idx in Path(output_dir).rglob("*"):
+                    try:
+                        if idx.is_file() and idx.name.lower() == "index.md":
+                            logger.debug(f"(Cleanup) Removing stray Index.md: {idx}")
+                            idx.unlink()
+                    except OSError:
+                        logger.exception(
+                            f"(Cleanup) Failed to remove stray Index.md: {idx}"
+                        )
+        except OSError:
+            logger.exception("(Cleanup) Failed to scan for stray Index.md files")
+        # Log any remaining index files for debugging
+        try:
+            remaining = [
+                str(p)
+                for p in Path(output_dir).rglob("*")
+                if p.is_file() and p.name.lower() == "index.md"
+            ]
+            if remaining:
+                logger.info(
+                    f"(Cleanup) Remaining index files after cleanup: {remaining}"
+                )
+            else:
+                logger.info("(Cleanup) No index files remain after cleanup")
+        except OSError:
+            logger.exception("(Cleanup) Failed to list remaining index files")
 
 
 def main():
@@ -343,15 +361,8 @@ def main():
         int: Exit code where `0` indicates success and `1` indicates failure.
     """
     parser = argparse.ArgumentParser(
-        description=(
-            "Convert GEDCOM genealogy files to Obsidian markdown notes. "
-            "Supports organizing output into people/, media/, stories/, and sources/ subdirectories, "
-            "optional canvas generation, and optional external media downloading with "
-            "per-host concurrency, rate limiting, and retry/backoff behavior. A /sources directory will be created "
-            "to hold original GEDCOM source files when present."
-        ),
+        description="Convert GEDCOM genealogy files to Obsidian markdown notes",
         epilog="Example: python src/main.py --input family.zip --output vault/family",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
     parser.add_argument(
@@ -360,9 +371,7 @@ def main():
         version=f"%(prog)s {__version__}",
     )
 
-    # Input / Output
-    io_group = parser.add_argument_group("Input/Output options")
-    io_group.add_argument(
+    parser.add_argument(
         "-i",
         "--input",
         type=Path,
@@ -370,7 +379,8 @@ def main():
         metavar="FILE",
         help="Path to input GEDCOM (.ged) or GEDZIP (.zip) file",
     )
-    io_group.add_argument(
+
+    parser.add_argument(
         "-o",
         "--output",
         type=Path,
@@ -378,162 +388,106 @@ def main():
         metavar="DIR",
         help="Output directory for generated notes",
     )
-    io_group.add_argument(
-        "-f", "--flat",
+
+    parser.add_argument(
+        "--flat",
         action="store_true",
-        help="Use flat structure (all files in output root). Creates no subdirectories.",
+        help="Use flat structure (all files in output root). Default creates subdirectories: people/, media/, stories/",
     )
-    io_group.add_argument(
-        "-n", "--no-index",
-        action="store_true",
-        help="Do not create an index file",
+    parser.add_argument(
+        "--media-folder",
+        type=str,
+        default="media",
+        help="Name of the media folder to create under the output directory (default: 'media'). Person pages will link to ../<media-folder>/ by default when using subdirectories.",
     )
-    io_group.add_argument(
+    parser.add_argument(
         "-m", "--max-individuals",
         type=int,
         default=None,
         help="Only process the first N individuals (useful for testing).",
     )
-    io_group.add_argument(
-        "--media-folder",
-        type=str,
-        default="media",
-        help="Name of the media folder to use under the output directory (default: 'media'). Person pages will link to ../<media-folder>/... when using subdirectories.",
-    )
-
-    # Canvas options
-    canvas_group = parser.add_argument_group("Canvas options")
-    canvas_group.add_argument(
-        "-ca", "--canvas",
-        action="store_true",
-        help="Create an Obsidian canvas file for family tree visualization",
-    )
-    canvas_group.add_argument(
-        "-r", "--root",
-        type=str,
-        metavar="ID",
-        help=(
-            "Root person for canvas. Can be a selection number (e.g., 85) or GEDCOM ID (e.g., @I253884714@). "
-            "If not provided, will prompt interactively."
-        ),
-    )
-
-    # Logging / behavior
-    log_group = parser.add_argument_group("Logging and behavior")
-    log_group.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
-
-    # Media download options
-    media_group = parser.add_argument_group("Media download options")
-    media_group.add_argument(
+    parser.add_argument(
         "-dm", "--download-media",
         action="store_true",
         help="Download external media files referenced by URLs.",
     )
-    media_group.add_argument(
-        "-dt", "--media-download-timeout",
+    parser.add_argument(
+        "--media-download-timeout",
         type=int,
         default=15,
         help="HTTP timeout in seconds when downloading media.",
     )
-    media_group.add_argument(
-        "-dr", "--media-download-retries",
+    parser.add_argument(
+        "--media-download-retries",
         type=int,
         default=2,
         help="Number of retries for transient download failures.",
     )
-    media_group.add_argument(
-        "-db", "--media-download-max-bytes",
+    parser.add_argument(
+        "--media-download-max-bytes",
         type=int,
         default=None,
         help="Maximum number of bytes to download per media file (None = unlimited).",
     )
 
-    # Concurrency and rate limiting
-    media_group.add_argument(
-        "-c", "--media-download-concurrency",
-        type=int,
-        default=4,
-        help="Total number of concurrent media download workers.",
-    )
-    media_group.add_argument(
-        "-mr", "--media-download-rate",
-        type=float,
-        default=None,
-        help="Global rate limit (requests/sec) across all download workers.",
+    parser.add_argument(
+        "--no-index", action="store_true", help="Do not create an index file"
     )
 
-    # Per-host concurrency: positive flag to enable per-host limits (disabled by default)
-    media_group.add_argument(
-        "-pm", "--media-per-host-limits",
-        dest="media_download_enable_concurrency",
+    parser.add_argument(
+        "--canvas",
         action="store_true",
-        help=(
-            "Enable per-host concurrency controls to avoid overwhelming a single host. "
-            "When enabled, per-host semaphores limit concurrent requests to the same host. Default: disabled."
-        ),
+        help="Create an Obsidian canvas file for family tree visualization",
     )
 
-    media_group.add_argument(
-        "-ph", "--per-host-concurrency",
-        dest="media_download_per_host_concurrency",
-        type=int,
-        default=2,
-        help="Maximum concurrent downloads per host when per-host concurrency is enabled.",
-    )
-    media_group.add_argument(
-        "-dd", "--media-download-delay",
-        type=float,
-        default=None,
-        help="Fixed delay (seconds) to wait between sequential requests (per-worker).",
-    )
-    media_group.add_argument(
-        "-ds", "--media-download-random-std",
-        type=float,
-        default=0.0,
-        help="Gaussian jitter standard deviation (seconds) applied to --media-download-delay.",
-    )
-    media_group.add_argument(
-        "-mb", "--media-download-max-backoff",
-        type=float,
-        default=60.0,
-        help="Maximum backoff in seconds when progressively backing off after repeated 429s.",
-    )
-
-    # Convenience combined flag: set both global and per-host concurrency with one value (e.g. "4,2")
-    media_group.add_argument(
-        "-mc", "--media-concurrency",
+    parser.add_argument(
+        "--canvas-plugin",
         type=str,
-        default=None,
-        help=(
-            "Convenience: set both global and per-host concurrency in the form GLOBAL,PER_HOST. "
-            "Example: --media-concurrency 4,2 will set --media-download-concurrency=4 and --media-download-per-host-concurrency=2. "
-            "Overrides individual flags if provided."
-        ),
+        default="default",
+        help="Canvas plugin name to use (entrypoint name or 'default')",
+    )
+
+    parser.add_argument(
+        "--list-canvas-plugins",
+        action="store_true",
+        help="List available canvas plugins (discovered via entry points) and exit",
+    )
+
+    parser.add_argument(
+        "--root",
+        type=str,
+        metavar="ID",
+        help="Root person for canvas. Can be a selection number (e.g., 85) or GEDCOM ID (e.g., @I253884714@). If not provided, will prompt interactively.",
+    )
+
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
 
     args = parser.parse_args()
 
-    # Prevent conflicting concurrency flags: if --media-concurrency provided, individual concurrency flags must not be present
-    argv = sys.argv[1:]
-    media_conc_flags = {"--media-concurrency", "-mc"}
-    individual_flags = {"--media-download-concurrency", "-c", "--per-host-concurrency", "-ph"}
-    if any(f in argv for f in media_conc_flags) and any(f in argv for f in individual_flags):
-        parser.error("Cannot combine --media-concurrency with --media-download-concurrency or --per-host-concurrency; provide either combined or individual settings.")
-
-    # Convenience: parse --media-concurrency if provided
-    if getattr(args, 'media_concurrency', None):
-        try:
-            parts = [p.strip() for p in args.media_concurrency.split(',') if p.strip()]
-            if len(parts) >= 1:
-                args.media_download_concurrency = int(parts[0])
-            if len(parts) >= 2:
-                args.media_download_per_host_concurrency = int(parts[1])
-        except Exception:
-            parser.error("--media-concurrency expects two integers separated by a comma, e.g. '4,2'")
-
     # Setup logging
     setup_logging(args.verbose)
     logger = logging.getLogger(__name__)
+
+    # If requested, list available canvas plugins and exit
+    if getattr(args, "list_canvas_plugins", False):
+        try:
+            from canvas_plugin import list_plugins
+
+            plugins = list_plugins()
+            if not plugins:
+                print("No canvas plugins registered")
+            else:
+                print("Available canvas plugins:")
+                for name, cls in plugins.items():
+                    module = getattr(cls, "__module__", "")
+                    clsname = getattr(cls, "__name__", str(cls))
+                    print(f"- {name}: {module}.{clsname}")
+            return 0
+        except (ImportError, RuntimeError):
+            logger.exception("Failed to list canvas plugins")
+            return 1
 
     # Validate inputs
     if not args.input.exists():
@@ -545,47 +499,69 @@ def main():
 
     # Check if input is a ZIP file
     is_zip = args.input.suffix.lower() in [".zip", ".gedzip"]
-    temp_dir = None
     gedcom_file = args.input
     media_dir = None
 
-    try:
-        if is_zip:
-            # Extract ZIP file to temporary directory
-            temp_dir = Path(tempfile.mkdtemp(prefix="gedcom_"))
-            gedcom_file, media_dir = extract_gedzip(args.input, temp_dir)
+    # If input is a ZIP, extract to a TemporaryDirectory that is auto-cleaned
+    if is_zip:
+        import tempfile as _tempfile
 
-        # Convert
-        exit_code = convert_gedcom_to_markdown(
-            gedcom_file=gedcom_file,
-            output_dir=args.output,
-            create_index=not args.no_index,
-            media_dir=media_dir,
-            use_flat_structure=args.flat,
-            create_canvas=args.canvas,
-            root_id=args.root,
-            download_media=args.download_media,
-            media_download_timeout=args.media_download_timeout,
-            media_download_retries=args.media_download_retries,
-            media_download_max_bytes=args.media_download_max_bytes,
-            media_download_concurrency=args.media_download_concurrency,
-            media_download_rate=args.media_download_rate,
-            media_download_enable_concurrency=args.media_download_enable_concurrency,
-            media_download_per_host_concurrency=args.media_download_per_host_concurrency,
-            media_download_delay=args.media_download_delay,
-            media_download_random_std=args.media_download_random_std,
-            media_download_max_backoff=args.media_download_max_backoff,
-            max_individuals=args.max_individuals,
-            media_subdir_name=args.media_folder,
-        )
+    # Convert
+    exit_code = convert_gedcom_to_markdown(
+        gedcom_file=gedcom_file,
+        output_dir=args.output,
+        create_index=not args.no_index,
+        media_dir=media_dir,
+        use_flat_structure=args.flat,
+        create_canvas=args.canvas,
+        root_id=args.root,
+        plugin_name=args.canvas_plugin if getattr(args, 'canvas_plugin', None) else None,
+        download_media=args.download_media,
+        media_download_timeout=getattr(args, 'media_download_timeout', 15),
+        media_download_retries=getattr(args, 'media_download_retries', 2),
+        media_download_max_bytes=getattr(args, 'media_download_max_bytes', None),
+        media_download_concurrency=getattr(args, 'media_download_concurrency', 4),
+        media_download_rate=getattr(args, 'media_download_rate', None),
+        media_download_enable_concurrency=getattr(args, 'media_download_enable_concurrency', False),
+        media_download_per_host_concurrency=getattr(args, 'media_download_per_host_concurrency', 2),
+        media_download_delay=getattr(args, 'media_download_delay', None),
+        media_download_random_std=getattr(args, 'media_download_random_std', 0.0),
+        media_download_max_backoff=getattr(args, 'media_download_max_backoff', 60.0),
+        max_individuals=getattr(args, 'max_individuals', None),
+        media_subdir_name=getattr(args, 'media_folder', None),
+    )
 
+    if exit_code != 0:
         return exit_code
+        with _tempfile.TemporaryDirectory(prefix="gedcom_") as _tmpdir:
+            tmp_path = Path(_tmpdir)
+            gedcom_file, media_dir = extract_gedzip(args.input, tmp_path)
 
-    finally:
-        # Clean up temporary directory
-        if temp_dir and temp_dir.exists():
-            logger.debug(f"Cleaning up temporary directory: {temp_dir}")
-            shutil.rmtree(temp_dir)
+            # Convert while tempdir is active
+            exit_code = convert_gedcom_to_markdown(
+                gedcom_file=gedcom_file,
+                output_dir=args.output,
+                create_index=not args.no_index,
+                media_dir=media_dir,
+                use_flat_structure=args.flat,
+                create_canvas=args.canvas,
+                root_id=args.root,
+                plugin_name=args.canvas_plugin,
+            )
+            return exit_code
+
+    # Non-zip: convert directly
+    exit_code = convert_gedcom_to_markdown(
+        gedcom_file=gedcom_file,
+        output_dir=args.output,
+        create_index=not args.no_index,
+        media_dir=media_dir,
+        use_flat_structure=args.flat,
+        create_canvas=args.canvas,
+        root_id=args.root,
+        plugin_name=args.canvas_plugin,
+    )
+    return exit_code
 
 
 if __name__ == "__main__":

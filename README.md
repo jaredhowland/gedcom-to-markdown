@@ -301,6 +301,38 @@ While the canvas generator creates a useful visualization, it has some limitatio
 - After initial generation, spend a few minutes adjusting any overlapping nodes for a cleaner layout
 - The canvas is fully interactive - you can reorganize it to suit your preferences while maintaining all the relationship connections
 
+### Canvas Plugin System
+
+The canvas generator can be extended or replaced via a plugin system. Third-party packages may register a Canvas implementation under the entry-point group `gedcom_to_markdown.canvas_plugins`.
+
+- Entry-point group: `gedcom_to_markdown.canvas_plugins`
+- CLI selection: `--canvas-plugin NAME` (default: `default`)
+- Runtime listing: `--list-canvas-plugins` prints discovered plugins
+- Programmatic selection: `src.api.convert(..., plugin_name="NAME")`
+
+Example `pyproject.toml` entry-point (third-party package):
+
+```toml
+[project.entry-points."gedcom_to_markdown.canvas_plugins"]
+# example plugin published by another package
+example = "example_pkg.plugins:PluginClass"
+```
+
+Minimal plugin example (class should accept `individuals, output_dir` and implement `generate_canvas(root_id, canvas_filename)`):
+
+```py
+class MyCanvasPlugin:
+    def __init__(self, individuals, output_dir):
+        self.individuals = individuals
+        self.output_dir = output_dir
+
+    def generate_canvas(self, root_person_id, canvas_filename="Family Tree.canvas"):
+        # create canvas file at self.output_dir and return path
+        return f"{self.output_dir}/{canvas_filename}"
+```
+
+After packaging and installing a plugin, it will be discovered at runtime; use `--canvas-plugin <name>` to select it when running the CLI.
+
 ## Project Structure
 
 ```text

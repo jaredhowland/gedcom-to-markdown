@@ -124,9 +124,5 @@ dmypy.json
 .pyre/
 
 .DS_Store
-
-examples/
-
 test_output/
-
 output/
