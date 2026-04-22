@@ -115,16 +115,75 @@ output/
 python src/main.py -i family.zip -o output --flat
 ```
 
-### Options
+### Command-line options — Quick guide for new users
 
-- `-i`, `--input FILE`: Path to input GEDCOM (.ged) or GEDZIP (.zip) file (required)
-- `-o`, `--output DIR`: Output directory for generated notes (required)
-- `--flat`: Use flat structure (all files in output root). Default creates subdirectories
-- `--no-index`: Skip creating the index file
-- `--canvas`: Create an Obsidian canvas file for family tree visualization
-- `--root ID`: Root person for canvas. Can be a selection number (e.g., `85`) or GEDCOM ID (e.g., `@I253884714@` or `I253884714`). If not provided with `--canvas`, will prompt interactively
-- `--verbose` or `-v`: Enable detailed logging
+This guide explains the CLI features and when you'd use them. Short flags use two-letter lowercase aliases where available.
 
+Input & output
+- `-i`, `--input FILE` (required): The GEDCOM `.ged` file or a GEDZIP `.zip` package that includes media. Use GEDZIP when you want the converter to copy local media files automatically.
+- `-o`, `--output DIR` (required): Destination folder for generated notes and media. The directory will be created if it doesn't exist.
+- `-m`, `--max-individuals N` (optional): Only process the first N individuals from the GEDCOM file. Useful for testing or partial exports. If omitted, all individuals are processed.
+- `--media-folder NAME` (optional): Name of the media folder created under the output directory (default: `media`). Person pages will link to `../<media-folder>/...` by default when using subdirectories.
+
+Organization & index
+- `-f`, `--flat`: Put all generated files directly in the output folder (no `people/`, `media/`, `stories/` subfolders). Useful for experimenting or importing into an existing vault.
+- `-n`, `--no-index`: Skip creating `Index.md`. Use when you don't want an automatically generated global index.
+
+Canvas (visual family map)
+- `-ca`, `--canvas`: Generate an Obsidian `.canvas` file that visually lays out the family tree. Helpful for exploring relationships and printing diagrams.
+- `-r`, `--root ID`: Choose the root person for the canvas. Provide a numbered selection (e.g., `85`) or a GEDCOM ID (e.g., `@I253884714@`). If omitted the program will let you pick interactively.
+
+Logging & troubleshooting
+- `-v`, `--verbose`: Show detailed logs and debug messages. Turn this on when something goes wrong or to understand what the tool is doing.
+
+External media: links vs downloads (important)
+- `-dm`, `--download-media`: Opt-in flag to attempt downloading external media referenced by URLs. If you do not enable this, external URLs are preserved and written into per-person "External Media.md" pages so you can review or download them manually later.
+- Media attached to a person or to one of their families is linked from every relevant person's markdown file.
+- Why this distinction matters: many external image hosts require permission or rate limiting; preserving links avoids accidental scraping and keeps output reproducible.
+
+Download settings (only used when `--download-media` is set)
+- `-dt`, `--media-download-timeout` (default 15s): Network timeout for each download request.
+- `-dr`, `--media-download-retries` (default 2): How many times to retry transient failures before giving up.
+- `-db`, `--media-download-max-bytes` (default: none): Abort downloads larger than this size (bytes); if exceeded, the link is kept instead of a local file.
+
+Politeness and concurrency (be a good citizen)
+- `-c`, `--media-download-concurrency` (default 4): Number of parallel workers that may download files. Lower values reduce load on your machine and remote servers.
+- `-mr`, `--media-download-rate` (default: unlimited): Global limit (requests/sec) applied across all workers. Set to a small value (e.g., 0.5) when downloading many files.
+- `-pm`, `--media-per-host-limits` (disabled by default): When enabled, the tool prevents many workers contacting the same host at once. Recommended when downloading from a single service to avoid triggering rate limits.
+- `-ph`, `--per-host-concurrency` (default 2): Max concurrent requests to the same host when per-host limits are enabled.
+- `-dd`, `--media-download-delay` (float, default: None): Fixed inter-request delay in seconds applied by each worker between its own sequential requests. Use this to pace downloads when processing many files (for example `-dd 1.0` pauses ~1 second between requests issued by the same worker).
+- `-ds`, `--media-download-random-std` (float, default: 0.0): Gaussian jitter (standard deviation in seconds) applied on top of the fixed delay. Jitter adds small random variation to the pause so requests aren't perfectly periodic; this reduces burstiness and helps avoid automated rate-limiting. Example: `-dd 1.0 -ds 0.2` results in pauses usually close to 1.0 second; most pauses will be between about 0.6 and 1.4 seconds. Pauses are never negative.
+
+Why both exist:
+- `-dd` provides deterministic pacing you can reason about and reproduce.
+- `-ds` spreads requests over time to avoid synchronized spikes across workers or hosts; set to 0 to disable jitter.
+
+Interaction notes:
+- Delays are per-worker; they do not replace global rate limits (`--media-download-rate`) or per-host semaphores (`--media-per-host-limits`). They are an additional politeness mechanism that smooths outgoing request timing.
+- `-mb`, `--media-download-max-backoff` (default 60s): Maximum wait time used when progressively backing off after repeated 429 responses. The downloader honors `Retry-After` headers.
+
+Convenience
+- `-mc`, `--media-concurrency GLOBAL,PER_HOST`: Set both global and per-host concurrency in one value (e.g., `8,2`). Cannot be combined with `-c` or `-ph`.
+
+What the tool does with external links
+- If downloads are disabled, each person with external OBJE URLs gets a small markdown file ("<Person> External Media.md") listing titles and the original URLs. This makes it safe and easy to review external sources.
+- When downloads are enabled, the tool attempts polite, concurrent downloads with retries, backoff, and per-host limits. If a download fails or exceeds size limits, the original URL is retained in the person's media page.
+- Downloading happens as the final media step so markdown generation finishes first, and the CLI prints a simple `Media downloads: X/Y` progress line while it runs.
+
+Quick examples
+
+```bash
+# Basic conversion (no external downloads, recommended for first run):
+python src/main.py -i family.zip -o output/
+
+# Convert and download external media politely (enable per-host limits):
+python src/main.py -i family.zip -o output/ -dm -c 6 -pm -ph 2 -mr 0.5 -v
+
+# Flat output without subdirectories (for quick inspection):
+python src/main.py -i family.ged -o output --flat
+```
+
+If anything in the CLI is unclear, run `python src/main.py --help` which shows the short flags and defaults.
 ### Examples
 
 **With GEDZIP file (structured output):**

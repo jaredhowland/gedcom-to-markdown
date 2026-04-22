@@ -10,6 +10,15 @@ import tempfile
 import shutil
 from pathlib import Path
 
+# If the python-gedcom library is not installed in the environment where
+# pytest is being executed, skip the test collection early with a helpful
+# message. This makes it possible to run parts of the test suite in
+# restricted environments where installing dependencies is not possible.
+try:
+    import gedcom  # noqa: F401
+except Exception:
+    pytest.skip("Skipping tests because 'python-gedcom' is not installed.", allow_module_level=True)
+
 
 @pytest.fixture
 def temp_dir():

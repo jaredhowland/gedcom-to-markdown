@@ -10,6 +10,7 @@ This module tests the command-line interface and main conversion workflow includ
 """
 
 import pytest
+pytest.importorskip('gedcom', reason="python-gedcom not installed; skipping main CLI tests")
 import zipfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock

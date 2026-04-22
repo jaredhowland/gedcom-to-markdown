@@ -341,18 +341,59 @@ class Individual:
         Returns:
             List[Dict[str, str]]: A list of dictionaries each containing the keys 'file', 'title', and 'format'. The 'file' value is non-empty for all returned entries.
         """
+        return self._extract_media_entries(self.element)
+
+    def get_family_images(self) -> List[Dict[str, str]]:
+        """
+        Return media entries attached to families this individual belongs to.
+
+        Family-level media is shared by the spouses and children in that family,
+        so it should be linked from every relevant person's markdown file.
+        """
+        images = []
+        for family in self.gedcom.get_families(self.element):
+            images.extend(self._extract_media_entries(family))
+        return images
+
+    def get_all_media(self) -> List[Dict[str, str]]:
+        """
+        Return all media related to this person, including family-level media.
+
+        The result is deduplicated by the media file/title/format tuple so the
+        same attachment is not rendered multiple times when it appears through
+        both an individual and a family record.
+        """
+        combined = self.get_images() + self.get_family_images()
+        unique = []
+        seen = set()
+
+        for entry in combined:
+            key = (
+                entry.get("file", ""),
+                entry.get("title", ""),
+                entry.get("format", ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(entry)
+
+        return unique
+
+    def _extract_media_entries(self, element) -> List[Dict[str, str]]:
+        """
+        Extract media entries from any GEDCOM element with OBJE children.
+        """
         images = []
 
-        for child in self.element.get_child_elements():
+        for child in element.get_child_elements():
             if child.get_tag() == "OBJE":
-                # OBJE can have a reference or inline data
+                image_info = {"file": "", "title": "", "format": ""}
                 reference = child.get_value()
-                if reference and reference.startswith("@"):
-                    # Resolve the reference to get actual file info
+
+                if reference and isinstance(reference, str) and reference.startswith("@"):
                     obje_element = self.gedcom.get_element_dictionary().get(reference)
                     if obje_element:
-                        image_info = {"file": "", "title": "", "format": ""}
-
                         for obje_child in obje_element.get_child_elements():
                             if obje_child.get_tag() == "FILE":
                                 image_info["file"] = obje_child.get_value() or ""
@@ -360,9 +401,17 @@ class Individual:
                                 image_info["title"] = obje_child.get_value() or ""
                             elif obje_child.get_tag() == "FORM":
                                 image_info["format"] = obje_child.get_value() or ""
+                else:
+                    for obje_child in child.get_child_elements():
+                        if obje_child.get_tag() == "FILE":
+                            image_info["file"] = obje_child.get_value() or ""
+                        elif obje_child.get_tag() == "TITL":
+                            image_info["title"] = obje_child.get_value() or ""
+                        elif obje_child.get_tag() == "FORM":
+                            image_info["format"] = obje_child.get_value() or ""
 
-                        if image_info["file"]:
-                            images.append(image_info)
+                if image_info["file"]:
+                    images.append(image_info)
 
         return images
 

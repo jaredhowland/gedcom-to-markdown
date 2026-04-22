@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- External OBJE URL handling: generate per-person media markdown files for OBJE records referencing remote URLs (FORM URL or FILE starting with http/https). Person notes link to these media pages via WikiLinks.
+- Optional downloading of external media with CLI flags: `--download-media`, `--media-download-timeout`, `--media-download-retries`, `--media-download-max-bytes`, `--media-download-concurrency`, and `--media-download-rate`. Downloads use streaming writes, atomic file replacement, exponential backoff, and honor HTTP 429 Retry-After headers.
+- Concurrent downloads with configurable concurrency and optional global rate limiting to be polite to remote servers.
+- Safe filename sanitization and collision handling for downloaded media.
+- Tests covering URL-based OBJE handling, download behavior, Retry-After, filename collisions, and max-bytes enforcement.
+
 ## [1.0.0] - 2025-11-02
 
 ### Added
