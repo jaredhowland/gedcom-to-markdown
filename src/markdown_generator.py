@@ -842,7 +842,8 @@ class MarkdownGenerator:
 
                 if code == 429:
                     # Determine delay from Retry-After header or exponential backoff
-                    delay = _parse_retry_after(retry_after) or (backoff_base * (2 ** attempts))
+                    parsed_retry_after = _parse_retry_after(retry_after)
+                    delay = parsed_retry_after if parsed_retry_after is not None else (backoff_base * (2 ** attempts))
                     # Cap backoff
                     delay = min(delay, self.max_backoff)
                     # Set per-host pause so other workers respect the server's rate limit
