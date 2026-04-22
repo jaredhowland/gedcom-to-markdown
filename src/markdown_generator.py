@@ -684,9 +684,10 @@ class MarkdownGenerator:
 
                 if local_filename:
                     if self.media_subdir:
-                        rel = f"{self.media_subdir}/{local_filename}"
+                        target_path = self.output_dir / self.media_subdir / local_filename
                     else:
-                        rel = local_filename
+                        target_path = self.output_dir / local_filename
+                    rel = os.path.relpath(target_path, start=file_path.parent).replace(os.sep, "/")
                     mf.write(f"![{title}]({rel})\n\n")
                     mf.write(f"[Local file]({rel})\n\n")
                 else:
