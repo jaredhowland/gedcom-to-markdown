@@ -14,7 +14,7 @@ from pathlib import Path
 # restricted environments where installing dependencies is not possible.
 try:
     import gedcom  # noqa: F401
-except Exception:
+except ModuleNotFoundError:
     pytest.skip("Skipping tests because 'python-gedcom' is not installed.", allow_module_level=True)
 
 
