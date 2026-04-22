@@ -460,7 +460,18 @@ class Individual:
         so it should be linked from every relevant person's markdown file.
         """
         images = []
-        for family in self.gedcom.get_families(self.element):
+        families = list(self.gedcom.get_families(self.element))
+
+        get_families_as_child = getattr(self.gedcom, "get_families_as_child", None)
+        if callable(get_families_as_child):
+            families.extend(get_families_as_child(self.element))
+
+        seen_families = set()
+        for family in families:
+            family_id = id(family)
+            if family_id in seen_families:
+                continue
+            seen_families.add(family_id)
             images.extend(self._extract_media_entries(family))
         return images
 
