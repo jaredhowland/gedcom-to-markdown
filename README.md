@@ -166,9 +166,9 @@ Convenience
 - `-mc`, `--media-concurrency GLOBAL,PER_HOST`: Set both global and per-host concurrency in one value (e.g., `8,2`). Cannot be combined with `-c` or `-ph`.
 
 What the tool does with external links
-- If downloads are disabled, each person with external OBJE URLs gets a small markdown file ("<Person> External Media.md") listing titles and the original URLs. This makes it safe and easy to review external sources.
-- When downloads are enabled, the tool attempts polite, concurrent downloads with retries, backoff, and per-host limits. If a download fails or exceeds size limits, the original URL is retained in the person's media page.
-- Downloading happens as the final media step so markdown generation finishes first, and the CLI prints a simple `Media downloads: X/Y` progress line while it runs.
+- If downloads are disabled, external OBJE URLs are written directly into the relevant person note so you can still review and follow the original sources without creating extra per-person media files.
+- When downloads are enabled, the tool attempts polite, concurrent downloads with retries, backoff, and per-host limits. If a download fails or exceeds size limits, the original URL is kept in the person note instead of being dropped.
+- Downloading happens after markdown generation, and the CLI prints a simple `Media downloads: X/Y` progress line while it runs.
 
 Quick examples
 
