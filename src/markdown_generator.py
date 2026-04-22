@@ -433,8 +433,9 @@ class MarkdownGenerator:
         # Write local images inline as before
         if local_images:
             f.write("## Images\n")
+            person_alt = individual.get_full_name()
             for image in local_images:
-                title = image.get("title") or "Image"
+                title = image.get("title") or person_alt
                 filename = image.get("file")
                 if self.use_subdirectories and self.media_subdir:
                     image_path = f"../{self.media_subdir}/{filename}"
@@ -450,8 +451,9 @@ class MarkdownGenerator:
         if external_images:
             # Leave a marker for downstream rewrite, the download phase will reconstruct the Images section
             f.write("## External media\n\n")
+            person_alt_ext = individual.get_full_name()
             for image in external_images:
-                title = image.get("title") or "Image"
+                title = image.get("title") or person_alt_ext
                 file_val = image.get("file")
                 f.write(f"- {title}: {file_val}\n")
             f.write("\n")
@@ -573,7 +575,7 @@ class MarkdownGenerator:
         with open(file_path, "w", encoding="utf-8") as mf:
             mf.write(f"# External media for {individual_name}\n\n")
             for entry in media_entries:
-                title = entry.get("title") or "Image"
+                title = entry.get("title") or individual_name
                 url = entry.get("file")
 
                 with self._cache_lock:
@@ -1022,7 +1024,7 @@ class MarkdownGenerator:
                 embed_lines = []
                 for entry in individual.get_all_media():
                     file_val = entry.get("file", "")
-                    title = entry.get("title") or "Image"
+                    title = entry.get("title") or person_name
 
                     if isinstance(file_val, str) and (file_val.startswith("http://") or file_val.startswith("https://")):
                         with self._cache_lock:
@@ -1078,7 +1080,9 @@ class MarkdownGenerator:
                     mp.write("Photo | GEDCOM ID | Name | Title | Original URL\n")
                     mp.write("--- | --- | --- | --- | ---\n")
                     for photo, ptr, name, title, url in photo_person_pairs:
-                        mp.write(f"{photo} | {ptr} | {name} | {title} | {url or ''}\n")
+                        # Prefer a meaningful title; if absent or generic 'Image', fall back to the person's name
+                        write_title = name if (not title or str(title).strip().lower() == 'image') else title
+                        mp.write(f"{photo} | {ptr} | {name} | {write_title} | {url or ''}\n")
             except Exception:
                 logger.exception("Failed to write photo_person_map.md")
 

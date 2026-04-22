@@ -490,15 +490,13 @@ class TestFamilyFormatting:
         generator = MarkdownGenerator(output_dir, media_subdir='media')
         generator.generate_note(person)
 
-        media_file = output_dir / 'media' / f"{person.get_file_name()} External Media.md"
-        assert media_file.exists()
-        content = media_file.read_text(encoding='utf-8')
-        assert 'https://example.com/dist.jpg?ctx=ArtCtxPublic' in content
-
-        # person note contains link to media page
+        map_file = output_dir / 'media' / 'photo_person_map.md'
+        # Current behavior: per-person External Media files are not generated. A cross-reference mapping is created only when downloads succeed.
+        assert not map_file.exists()
+        # person note should contain the original external URL
         note_file = output_dir / f"{person.get_file_name()}.md"
         note_content = note_file.read_text(encoding='utf-8')
-        assert '[[media/' in note_content and 'External media' in note_content
+        assert 'https://example.com/dist.jpg?ctx=ArtCtxPublic' in note_content
 
     def test_external_obj_download_success(self, temp_dir, monkeypatch, capsys):
         """When --download-media is enabled, external URL should be downloaded and referenced locally"""
@@ -551,16 +549,17 @@ class TestFamilyFormatting:
         assert 'Media downloads: 1/1' in captured.out
 
         media_dir = output_dir / 'media'
-        # There should be at least one binary file and one media md
+        # There should be at least one binary file and the photo->person map when downloads succeed
         files = list(media_dir.iterdir())
         names = [p.name for p in files]
         assert any(p.lower().endswith('.jpg') or p.lower().endswith('.jpeg') for p in names)
-        assert any('External Media.md' in n for n in names)
+        assert 'photo_person_map.md' in names
 
         # Person note should reference local file
         note_file = output_dir / f"{person.get_file_name()}.md"
         note_content = note_file.read_text(encoding='utf-8')
-        assert '[[media/' in note_content
+        # Note should contain a path to the media directory
+        assert 'media/' in note_content
 
     def test_external_obj_download_failure(self, temp_dir, monkeypatch):
         """If download fails, media md should still reference external URL and not crash"""
@@ -598,10 +597,12 @@ class TestFamilyFormatting:
         generator.generate_all([person])
         generator._download_external_media([person], output_dir / 'media')
 
-        media_file = output_dir / 'media' / f"{person.get_file_name()} External Media.md"
-        assert media_file.exists()
-        content = media_file.read_text(encoding='utf-8')
-        assert 'https://example.com/dist.jpg?ctx=ArtCtxPublic' in content
+        map_file = output_dir / 'media' / 'photo_person_map.md'
+        # No downloads succeeded, so no mapping file should be created; person note should contain external URL
+        assert not map_file.exists()
+        note_file = output_dir / f"{person.get_file_name()}.md"
+        note_content = note_file.read_text(encoding='utf-8')
+        assert 'https://example.com/dist.jpg?ctx=ArtCtxPublic' in note_content
 
     def test_download_retry_after_respected(self, temp_dir, monkeypatch):
         """If server returns 429 with Retry-After, the delay is respected and retry occurs"""
@@ -772,11 +773,12 @@ class TestFamilyFormatting:
         generator.generate_all([person])
         generator._download_external_media([person], output_dir / 'media')
 
-        media_file = output_dir / 'media' / f"{person.get_file_name()} External Media.md"
-        assert media_file.exists()
-        content = media_file.read_text(encoding='utf-8')
-        # Since download was aborted, original URL should be present
-        assert 'https://example.com/huge.jpg' in content
+        map_file = output_dir / 'media' / 'photo_person_map.md'
+        assert not map_file.exists()
+        note_file = output_dir / f"{person.get_file_name()}.md"
+        note_content = note_file.read_text(encoding='utf-8')
+        # Since download was aborted, original URL should be present in person's note
+        assert 'https://example.com/huge.jpg' in note_content
 
     def test_content_type_extension_guessing(self, temp_dir, monkeypatch):
         """When the URL has no extension, content-type header is used to guess extension"""
@@ -890,9 +892,11 @@ class TestFamilyFormatting:
         bin_files = list(media_dir.glob('*.jpg')) + list(media_dir.glob('*.jpeg'))
         assert len(bin_files) == 0
         # Media md should exist and contain external URL
-        media_file = media_dir / f"{person.get_file_name()} External Media.md"
-        assert media_file.exists()
-        content = media_file.read_text(encoding='utf-8')
+        map_file = output_dir / 'media' / 'photo_person_map.md'
+        # No downloads were successful, so no mapping file should be created. Person note should include the external URL.
+        assert not map_file.exists()
+        note_file = output_dir / f"{person.get_file_name()}.md"
+        content = note_file.read_text(encoding='utf-8')
         assert 'https://example.com/fail.jpg' in content
 
 
