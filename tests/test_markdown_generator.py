@@ -715,9 +715,9 @@ class TestFamilyFormatting:
         generator.generate_all([person])
         generator._download_external_media([person], output_dir / 'media')
 
-        # Ensure urlopen was called at least twice (initial 429 + at least one retry)
+        # Ensure urlopen was called exactly twice (initial 429 + one retry)
         # and sleep recorded the Retry-After value
-        assert calls['n'] >= 2
+        assert calls['n'] == 2
         assert any(s >= 2 for s in sleep_calls)
 
     def test_download_filename_collision(self, temp_dir, monkeypatch):

@@ -559,6 +559,8 @@ def main():
                     return True
                 # Compact short-flag form: -c6, -ph2, -mc4,2 (value appended directly, no space or =)
                 # Only applies to short flags (single dash) to avoid false matches on long flags.
+                # The `entry[len(flag)] != '-'` guard prevents -c from matching --canvas (which
+                # starts with `-c` followed by `-`) while still allowing -c6 (digit follows flag).
                 if (
                     not flag.startswith('--')
                     and entry.startswith(flag)
