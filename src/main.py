@@ -550,10 +550,21 @@ def main():
     argv = sys.argv[1:]
 
     def _argv_contains_flag(argv_entries, flags):
-        """Return True if argv contains any flag exactly or in --flag=value form."""
+        """Return True if argv contains any flag exactly, in --flag=value form, or in compact -Xvalue form."""
         for entry in argv_entries:
             for flag in flags:
-                if entry == flag or entry.startswith(f"{flag}="):
+                if entry == flag:
+                    return True
+                if entry.startswith(f"{flag}="):
+                    return True
+                # Compact short-flag form: -c6, -ph2, -mc4,2 (value appended directly, no space or =)
+                # Only applies to short flags (single dash) to avoid false matches on long flags.
+                if (
+                    not flag.startswith('--')
+                    and entry.startswith(flag)
+                    and len(entry) > len(flag)
+                    and entry[len(flag)] != '-'
+                ):
                     return True
         return False
 

@@ -98,8 +98,6 @@ class MarkdownGenerator:
         self.stories_dir = stories_dir if stories_dir else output_dir
         self.use_subdirectories = use_subdirectories
         self.generated_stories = {}  # Track generated story files
-        self.generated_media = {}  # Track generated media files (external URL pages)
-        self.generated_media_data = {}  # Track media note contents for rewrite after downloads
         self.filename_map = {}  # Map from individual ID to actual filename used
         # Support legacy keyword names passed by tests or other callers
         # Map older media_* names to internal download_* equivalents
@@ -632,67 +630,6 @@ class MarkdownGenerator:
         # Return note name
         
         return note_name
-
-    def _generate_media_file(self, media_entries: List[Dict], individual_name: str) -> str:
-        """
-        Generate (or reuse) a markdown file in the media directory that embeds external media URLs.
-        Returns note name (without .md) suitable for WikiLink creation.
-        """
-        # Create safe filename
-        safe_name = individual_name.replace("/", "-").replace("\\", "-")
-        filename = f"{safe_name} External Media.md"
-
-        # Reuse if already generated
-        if filename in self.generated_media:
-            return filename.replace(".md", "")
-
-        # Determine directory to write media files
-        if self.media_subdir:
-            media_dir = self.output_dir / self.media_subdir
-        else:
-            media_dir = self.output_dir
-
-        media_dir.mkdir(parents=True, exist_ok=True)
-        file_path = media_dir / filename
-
-        logger.debug(f"Generating media file: {filename}")
-
-        self.generated_media_data[filename] = {
-            "individual_name": individual_name,
-            "entries": media_entries,
-            "path": file_path,
-        }
-        self._write_media_file(file_path, individual_name, media_entries)
-
-        self.generated_media[filename] = True
-        return filename.replace(".md", "")
-
-    def _write_media_file(self, file_path: Path, individual_name: str, media_entries: List[Dict]):
-        """
-        Write a media note using the current download cache when available.
-        """
-        with open(file_path, "w", encoding="utf-8") as mf:
-            mf.write(f"# External media for {individual_name}\n\n")
-            for entry in media_entries:
-                title = entry.get("title") or individual_name
-                url = entry.get("file")
-
-                with self._cache_lock:
-                    local_filename = self._downloaded_cache.get(url) if url else None
-
-                mf.write(f"## {title}\n\n")
-
-                if local_filename:
-                    if self.media_subdir:
-                        target_path = self.output_dir / self.media_subdir / local_filename
-                    else:
-                        target_path = self.output_dir / local_filename
-                    rel = os.path.relpath(target_path, start=file_path.parent).replace(os.sep, "/")
-                    mf.write(f"![{title}]({rel})\n\n")
-                    mf.write(f"[Local file]({rel})\n\n")
-                else:
-                    mf.write(f"![{title}]({url})\n\n")
-                    mf.write(f"[Original URL]({url})\n\n")
 
     def _download_url(self, url: str, media_dir: Path) -> Optional[str]:
         """
@@ -1258,14 +1195,6 @@ class MarkdownGenerator:
                     logger.exception("Error in prefetch worker")
                 completed += 1
                 print(f"Media downloads: {completed}/{total}", flush=True)
-
-        # Rewrite any generated media notes so downloaded files are linked locally.
-        for _media_file, data in self.generated_media_data.items():
-            self._write_media_file(
-                data["path"],
-                data["individual_name"],
-                data["entries"],
-            )
 
         # Build mapping of photos to people by scanning all individuals' media entries
         photo_person_pairs = []  # list of (photo_filename, gedcom_pointer, person_name)

@@ -12,6 +12,9 @@ This module tests Obsidian markdown note generation including:
 import pytest
 from pathlib import Path
 
+# Skip the entire module when python-gedcom is not installed
+pytest.importorskip("gedcom")
+
 from gedcom_parser import GedcomParser
 from individual import Individual
 from markdown_generator import MarkdownGenerator
@@ -681,8 +684,9 @@ class TestFamilyFormatting:
         calls = {'n': 0}
         sleep_calls = []
         def fake_urlopen(url, timeout=...):
-            if calls['n'] == 0:
-                calls['n'] += 1
+            call_index = calls['n']
+            calls['n'] += 1  # increment on every call
+            if call_index == 0:
                 hdrs = {'Retry-After': '2'}
                 raise urllib.error.HTTPError(url, 429, 'Too Many', hdrs, None)
             else:
@@ -711,8 +715,9 @@ class TestFamilyFormatting:
         generator.generate_all([person])
         generator._download_external_media([person], output_dir / 'media')
 
-        # Ensure urlopen was called at least twice and sleep recorded the Retry-After value
-        assert calls['n'] >= 1
+        # Ensure urlopen was called at least twice (initial 429 + at least one retry)
+        # and sleep recorded the Retry-After value
+        assert calls['n'] >= 2
         assert any(s >= 2 for s in sleep_calls)
 
     def test_download_filename_collision(self, temp_dir, monkeypatch):
