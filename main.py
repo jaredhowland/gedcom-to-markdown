@@ -88,7 +88,7 @@ def convert_gedcom_to_markdown(
         from markdown_generator import MarkdownGenerator
         from index_generator import IndexGenerator
         from utils.filenames import FilenameRegistry
-    except Exception:
+    except ImportError:
         logging.getLogger(__name__).exception(
             "Required modules for conversion not available"
         )

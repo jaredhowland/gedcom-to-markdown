@@ -489,11 +489,12 @@ class MarkdownGenerator:
 
     def _write_images(self, f, individual: Individual):
         """
-        Write an "Images" section to the open file for all images returned by the individual.
+        Write image sections to the open file for all images returned by the individual.
 
-        Handles local media files (written inline or prefixed with media_subdir) and external URLs.
-        For external URLs, generates a grouped media markdown file (per-person) that embeds each external image
-        and writes a WikiLink from the person's note to that media md file.
+        Local media files are written as inline Markdown image references under a
+        "## Images" heading. External URLs (http/https) are written under a
+        "## External media" heading as a bullet list with the original URL preserved;
+        they are not downloaded or linked to separate media files here.
 
         If the individual has no images, nothing is written.
         """
@@ -672,9 +673,11 @@ class MarkdownGenerator:
                 mf.write(f"## {title}\n\n")
 
                 if local_filename:
-                    if self.media_subdir:
-                        rel = f"{self.media_subdir}/{local_filename}"
-                    else:
+                    # The media note file lives inside media_dir; link to the image
+                    # using a path relative to file_path.parent (typically just the filename).
+                    try:
+                        rel = local_filename
+                    except Exception:
                         rel = local_filename
                     mf.write(f"![{title}]({rel})\n\n")
                     mf.write(f"[Local file]({rel})\n\n")
@@ -798,9 +801,6 @@ class MarkdownGenerator:
                                 logger.warning(f"Download exceeded max bytes for {url}")
                                 # Do not raise to let caller handle fallback; return None
                                 return None
-                            # If the returned chunk is smaller than requested chunk_size, it's likely the final chunk
-                            if isinstance(chunk, (bytes, bytearray)) and len(chunk) < chunk_size:
-                                break
                             if single_read_mode:
                                 # We've consumed the entire response in a single read() call; stop looping
                                 break
@@ -833,7 +833,8 @@ class MarkdownGenerator:
 
                 if code == 429:
                     # Determine delay from Retry-After header or exponential backoff
-                    delay = _parse_retry_after(retry_after) or (backoff_base * (2 ** attempts))
+                    parsed_retry_after = _parse_retry_after(retry_after)
+                    delay = parsed_retry_after if parsed_retry_after is not None else (backoff_base * (2 ** attempts))
                     # Cap backoff
                     delay = min(delay, self.max_backoff)
                     # Set per-host pause so other workers respect the server's rate limit

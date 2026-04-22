@@ -137,8 +137,8 @@ Logging & troubleshooting
 - `-v`, `--verbose`: Show detailed logs and debug messages. Turn this on when something goes wrong or to understand what the tool is doing.
 
 External media: links vs downloads (important)
-- `-dm`, `--download-media`: Opt-in flag to attempt downloading external media referenced by URLs. If you do not enable this, external URLs are preserved and written into per-person "External Media.md" pages so you can review or download them manually later.
-- Media attached to a person or to one of their families is linked from every relevant person's markdown file.
+- `-dm`, `--download-media`: Opt-in flag to attempt downloading external media referenced by URLs. If you do not enable this, external URLs are preserved and written into a `## External media` section in each relevant person's markdown note so you can review or download them manually later.
+- Media attached to a person or to one of their families is linked from every relevant person's markdown file; when downloads are disabled, external links remain referenced there instead of being downloaded to local files.
 - Why this distinction matters: many external image hosts require permission or rate limiting; preserving links avoids accidental scraping and keeps output reproducible.
 
 Download settings (only used when `--download-media` is set)
@@ -166,8 +166,8 @@ Convenience
 - `-mc`, `--media-concurrency GLOBAL,PER_HOST`: Set both global and per-host concurrency in one value (e.g., `8,2`). Cannot be combined with `-c` or `-ph`.
 
 What the tool does with external links
-- If downloads are disabled, each person with external OBJE URLs gets a small markdown file ("<Person> External Media.md") listing titles and the original URLs. This makes it safe and easy to review external sources.
-- When downloads are enabled, the tool attempts polite, concurrent downloads with retries, backoff, and per-host limits. If a download fails or exceeds size limits, the original URL is retained in the person's media page.
+- If downloads are disabled, each person with external OBJE URLs gets a `## External media` section in their person note listing titles and the original URLs. This makes it safe and easy to review external sources without triggering any downloads.
+- When downloads are enabled, the tool attempts polite, concurrent downloads with retries, backoff, and per-host limits. If a download fails or exceeds size limits, the original URL is retained in the person note.
 - Downloading happens as the final media step so markdown generation finishes first, and the CLI prints a simple `Media downloads: X/Y` progress line while it runs.
 
 Quick examples

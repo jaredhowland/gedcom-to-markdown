@@ -548,9 +548,18 @@ def main():
 
     # Prevent conflicting concurrency flags: if --media-concurrency provided, individual concurrency flags must not be present
     argv = sys.argv[1:]
+
+    def _argv_contains_flag(argv_entries, flags):
+        """Return True if argv contains any flag exactly or in --flag=value form."""
+        for entry in argv_entries:
+            for flag in flags:
+                if entry == flag or entry.startswith(f"{flag}="):
+                    return True
+        return False
+
     media_conc_flags = {"--media-concurrency", "-mc"}
     individual_flags = {"--media-download-concurrency", "-c", "--per-host-concurrency", "-ph"}
-    if any(f in argv for f in media_conc_flags) and any(f in argv for f in individual_flags):
+    if _argv_contains_flag(argv, media_conc_flags) and _argv_contains_flag(argv, individual_flags):
         parser.error("Cannot combine --media-concurrency with --media-download-concurrency or --per-host-concurrency; provide either combined or individual settings.")
 
     # Convenience: parse --media-concurrency if provided

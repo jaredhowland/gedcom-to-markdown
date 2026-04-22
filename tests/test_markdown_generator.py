@@ -492,11 +492,18 @@ class TestFamilyFormatting:
         john_file = output_dir / f"{john.get_file_name()}.md"
         jane_file = output_dir / f"{jane.get_file_name()}.md"
 
-        assert 'External media' in john_file.read_text(encoding='utf-8')
-        assert 'External media' in jane_file.read_text(encoding='utf-8')
+        assert 'Family Photo' in john_file.read_text(encoding='utf-8')
+        assert 'https://example.com/family-photo.jpg' in john_file.read_text(encoding='utf-8')
+        assert 'Family Photo' in jane_file.read_text(encoding='utf-8')
+        assert 'https://example.com/family-photo.jpg' in jane_file.read_text(encoding='utf-8')
 
     def test_external_obj_url_grouping(self, temp_dir):
-        """External OBJE URL should produce per-person media md and link"""
+        """External OBJE URL is written inline in the person note as an '## External media' section.
+
+        No separate per-person media markdown file is generated; the original URL
+        is preserved directly in the person note so it can be reviewed or downloaded
+        manually.
+        """
         ged = """0 HEAD
 1 SOUR TestApp
 1 GEDC
@@ -564,7 +571,11 @@ class TestFamilyFormatting:
             def __init__(self, data, headers=None):
                 self._data = data
                 self._headers = headers or {}
-            def read(self):
+                self._read = False
+            def read(self, size=-1):
+                if self._read:
+                    return b""
+                self._read = True
                 return self._data
             def getheader(self, name, default=None):
                 return self._headers.get(name, default)
@@ -676,7 +687,11 @@ class TestFamilyFormatting:
                 class FakeResp:
                     def __init__(self):
                         self._data = b'JPEG'
-                    def read(self):
+                        self._read = False
+                    def read(self, size=-1):
+                        if self._read:
+                            return b""
+                        self._read = True
                         return self._data
                     def getheader(self, name, default=None):
                         if name.lower() == 'content-type':
@@ -733,7 +748,11 @@ class TestFamilyFormatting:
         class FakeResp:
             def __init__(self):
                 self._data = b'JPEG'
-            def read(self):
+                self._read = False
+            def read(self, size=-1):
+                if self._read:
+                    return b""
+                self._read = True
                 return self._data
             def getheader(self, name, default=None):
                 if name.lower() == 'content-type':
@@ -844,7 +863,11 @@ class TestFamilyFormatting:
         class FakeResp:
             def __init__(self):
                 self._data = b'PNGDATA'
+                self._read = False
             def read(self, size=-1):
+                if self._read:
+                    return b""
+                self._read = True
                 return self._data
             def getheader(self, name, default=None):
                 if name.lower() == 'content-type':
@@ -896,7 +919,11 @@ class TestFamilyFormatting:
         class FakeResp:
             def __init__(self):
                 self._data = b'DATA'
+                self._read = False
             def read(self, size=-1):
+                if self._read:
+                    return b""
+                self._read = True
                 return self._data
             def getheader(self, name, default=None):
                 if name.lower() == 'content-type':
@@ -970,11 +997,16 @@ def test_per_host_semaphore(temp_dir, monkeypatch):
     # Slow response to allow overlap
     def fake_urlopen(req, timeout=...):
         class Resp:
+            def __init__(self):
+                self._read = False
             def __enter__(self):
                 return self
             def __exit__(self, exc_type, exc, tb):
                 return False
             def read(self, size=-1):
+                if self._read:
+                    return b""
+                self._read = True
                 time.sleep(0.1)
                 return b'DATA'
             def getheader(self, name, default=None):
