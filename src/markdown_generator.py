@@ -809,9 +809,6 @@ class MarkdownGenerator:
                                 logger.warning(f"Download exceeded max bytes for {url}")
                                 # Do not raise to let caller handle fallback; return None
                                 return None
-                            # If the returned chunk is smaller than requested chunk_size, it's likely the final chunk
-                            if isinstance(chunk, (bytes, bytearray)) and len(chunk) < chunk_size:
-                                break
                             if single_read_mode:
                                 # We've consumed the entire response in a single read() call; stop looping
                                 break
