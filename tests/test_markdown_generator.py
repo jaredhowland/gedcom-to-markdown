@@ -492,11 +492,13 @@ class TestFamilyFormatting:
         john_file = output_dir / f"{john.get_file_name()}.md"
         jane_file = output_dir / f"{jane.get_file_name()}.md"
 
-        assert 'Family Photo' in john_file.read_text(encoding='utf-8')
-        assert 'https://example.com/family-photo.jpg' in john_file.read_text(encoding='utf-8')
-        assert 'Family Photo' in jane_file.read_text(encoding='utf-8')
-        assert 'https://example.com/family-photo.jpg' in jane_file.read_text(encoding='utf-8')
+        john_text = john_file.read_text(encoding='utf-8')
+        jane_text = jane_file.read_text(encoding='utf-8')
 
+        assert 'Family Photo' in john_text
+        assert 'https://example.com/family-photo.jpg' in john_text
+        assert 'Family Photo' in jane_text
+        assert 'https://example.com/family-photo.jpg' in jane_text
     def test_external_obj_url_grouping(self, temp_dir):
         """External OBJE URL is written inline in the person note as an '## External media' section.
 

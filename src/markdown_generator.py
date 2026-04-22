@@ -534,14 +534,25 @@ class MarkdownGenerator:
         # External images will be handled during the download pass which embeds local files into person notes.
         # Do not create separate media markdown files here; external images will be mapped and embedded after download.
         if external_images:
-            # Leave a marker for downstream rewrite, the download phase will reconstruct the Images section
-            f.write("## External media\n\n")
-            person_alt_ext = individual.get_full_name()
-            for image in external_images:
-                title = image.get("title") or person_alt_ext
-                file_val = image.get("file")
-                f.write(f"- {title}: {file_val}\n")
-            f.write("\n")
+            if self.download_media:
+                # Leave a marker for downstream rewrite, the download phase will reconstruct the Images section
+                f.write("## External media\n\n")
+                person_alt_ext = individual.get_full_name()
+                for image in external_images:
+                    title = image.get("title") or person_alt_ext
+                    file_val = image.get("file")
+                    f.write(f"- {title}: {file_val}\n")
+                f.write("\n")
+            else:
+                # When not downloading media, link directly from the person's note to the external URL.
+                # Use numbered fallback titles when a title is missing.
+                f.write("## External media\n\n")
+                for idx, image in enumerate(external_images, start=1):
+                    raw_title = image.get("title")
+                    title = raw_title.strip() if isinstance(raw_title, str) and raw_title.strip() else f"External File {idx}"
+                    file_val = image.get("file")
+                    f.write(f"- [{title}]({file_val})\n")
+                f.write("\n")
 
     def _generate_story_file(self, story: dict, individual_name: str) -> str:
         """
@@ -673,12 +684,11 @@ class MarkdownGenerator:
                 mf.write(f"## {title}\n\n")
 
                 if local_filename:
-                    # The media note file lives inside media_dir; link to the image
-                    # using a path relative to file_path.parent (typically just the filename).
-                    try:
-                        rel = local_filename
-                    except Exception:
-                        rel = local_filename
+                    if self.media_subdir:
+                        target_path = self.output_dir / self.media_subdir / local_filename
+                    else:
+                        target_path = self.output_dir / local_filename
+                    rel = os.path.relpath(target_path, start=file_path.parent).replace(os.sep, "/")
                     mf.write(f"![{title}]({rel})\n\n")
                     mf.write(f"[Local file]({rel})\n\n")
                 else:
