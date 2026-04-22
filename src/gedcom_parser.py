@@ -9,8 +9,13 @@ from pathlib import Path
 from typing import List, Optional, Union
 import logging
 
-from gedcom.parser import Parser
-from gedcom.element.individual import IndividualElement
+try:
+    from gedcom.parser import Parser
+    from gedcom.element.individual import IndividualElement
+except ModuleNotFoundError as e:
+    raise ImportError(
+        "Missing dependency 'python-gedcom'. Install with: pip install python-gedcom"
+    ) from e
 
 
 logger = logging.getLogger(__name__)

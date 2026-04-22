@@ -8,6 +8,25 @@ that can be used across all test modules.
 import pytest
 from pathlib import Path
 
+try:
+    import gedcom  # noqa: F401
+    _GEDCOM_AVAILABLE = True
+except ModuleNotFoundError:
+    _GEDCOM_AVAILABLE = False
+
+
+@pytest.fixture
+def require_gedcom():
+    """Skip the calling test when python-gedcom is not installed.
+
+    Add this fixture to any test (or to other fixtures) that require the
+    python-gedcom library.  Tests that do *not* need the library will keep
+    running even when the library is absent, so utility tests, canvas-layout
+    tests, etc. are unaffected by a missing dependency.
+    """
+    if not _GEDCOM_AVAILABLE:
+        pytest.skip("python-gedcom is not installed")
+
 
 @pytest.fixture
 def temp_dir(tmp_path):
@@ -17,7 +36,7 @@ def temp_dir(tmp_path):
 
 
 @pytest.fixture
-def sample_gedcom_content():
+def sample_gedcom_content(require_gedcom):
     """
     Provide a minimal valid GEDCOM file content.
 
@@ -93,7 +112,7 @@ def sample_gedcom_file(temp_dir, sample_gedcom_content):
 
 
 @pytest.fixture
-def sample_gedcom_cr_only(temp_dir):
+def sample_gedcom_cr_only(temp_dir, require_gedcom):
     """
     Create a GEDCOM file with CR-only line endings.
 
@@ -106,7 +125,7 @@ def sample_gedcom_cr_only(temp_dir):
 
 
 @pytest.fixture
-def sample_gedcom_with_stories():
+def sample_gedcom_with_stories(require_gedcom):
     """
     Provide GEDCOM content with custom story tags (_STO).
 
@@ -143,7 +162,7 @@ def sample_gedcom_with_stories():
 
 
 @pytest.fixture
-def sample_gedcom_with_attributes():
+def sample_gedcom_with_attributes(require_gedcom):
     """Provide GEDCOM content with physical attributes."""
     return """0 HEAD
 1 SOUR TestApp
