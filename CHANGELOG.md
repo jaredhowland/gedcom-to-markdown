@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- External OBJE URL handling: generate per-person media markdown files for OBJE records referencing remote URLs (FORM URL or FILE starting with http/https). Person notes link to these media pages via WikiLinks.
+- External OBJE URL handling: record remote OBJE references (FORM URL or FILE starting with http/https) in a `## External media` section within each person note.
 - Optional downloading of external media with CLI flags: `--download-media`, `--media-download-timeout`, `--media-download-retries`, `--media-download-max-bytes`, `--media-download-concurrency`, and `--media-download-rate`. Downloads use streaming writes, atomic file replacement, exponential backoff, and honor HTTP 429 Retry-After headers.
 - Concurrent downloads with configurable concurrency and optional global rate limiting to be polite to remote servers.
 - Safe filename sanitization and collision handling for downloaded media.
