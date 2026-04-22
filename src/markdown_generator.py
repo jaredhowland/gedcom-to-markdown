@@ -24,7 +24,6 @@ import concurrent.futures
 import random
 
 import logging
-import re
 
 from individual import Individual
 from utils import resolve_gedcom_text
